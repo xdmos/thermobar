@@ -1,36 +1,36 @@
 # ThermoBar
 
-ThermoBar to lekka aplikacja menu bar dla macOS, która pokazuje bieżące
-obciążenie i stan termiczny Maca. Działa lokalnie, nie wysyła telemetrii i nie
-wymaga konta ani połączenia z Internetem.
+ThermoBar is a lightweight macOS menu bar app that displays your Mac's current
+resource usage and thermal condition. It runs entirely locally, sends no
+telemetry, and requires neither an account nor an Internet connection.
 
-## Funkcje
+## Features
 
-- pływający panel oraz menu bar;
-- użycie CPU, GPU i pamięci RAM;
-- średnie temperatury CPU i GPU oraz najgorętszy punkt układu;
-- prędkość aktualnie najszybszego wentylatora w RPM;
-- systemowy stan termiczny macOS;
-- opcjonalne lokalne powiadomienia o poważnym i krytycznym stanie termicznym;
-- opcjonalne uruchamianie przy logowaniu;
-- adaptacyjne próbkowanie zależne od widoczności panelu i uśpienia Maca.
+- floating panel and menu bar interface;
+- CPU, GPU, and memory usage;
+- average CPU and GPU temperatures, plus the hottest sensor reading;
+- current speed of the fastest fan in RPM;
+- macOS system thermal state;
+- optional local notifications for serious and critical thermal conditions;
+- optional launch at login;
+- adaptive sampling based on panel visibility and Mac sleep state.
 
-ThermoBar jedynie odczytuje dane. Nie zmienia prędkości wentylatorów i nie
-zapisuje wartości do AppleSMC.
+ThermoBar is read-only. It does not change fan speeds or write values to
+AppleSMC.
 
-## Wymagania
+## Requirements
 
-- macOS 27.0 lub nowszy;
-- Xcode z toolchainem Swift 6.2;
+- macOS 27.0 or later;
+- Xcode with the Swift 6.2 toolchain;
 - Apple Silicon.
 
-Pełny odczyt prywatnych czujników jest obecnie zweryfikowany wyłącznie dla
-`Mac17,9` z kompilacją macOS `26A5388g`. Na innym modelu lub po aktualizacji
-systemu ThermoBar celowo wyłączy niezweryfikowane temperatury, GPU i RPM zamiast
-zgadywać klucze czujników. Publiczne metryki CPU, RAM i stan termiczny macOS
-pozostają dostępne.
+Full access to private sensors is currently verified only on `Mac17,9` running
+macOS build `26A5388g`. On a different model or after a system update,
+ThermoBar intentionally disables unverified temperature, GPU, and RPM readings
+instead of guessing sensor keys. Public CPU, memory, and macOS thermal-state
+metrics remain available.
 
-## Instalacja ze źródeł
+## Install from source
 
 ```bash
 git clone https://github.com/xdmos/thermobar.git
@@ -40,33 +40,32 @@ ditto build/ThermoBar.app /Applications/ThermoBar.app
 open /Applications/ThermoBar.app
 ```
 
-Skrypt tworzy lokalnie podpisany pakiet `build/ThermoBar.app`. Po uruchomieniu
-ikona ThermoBar pojawi się w menu barze. Panel można pokazywać i ukrywać z menu
-aplikacji.
+The build script creates a locally signed app bundle at
+`build/ThermoBar.app`. After launch, the ThermoBar icon appears in the menu bar.
+You can show or hide the floating panel from the app menu.
 
-Powiadomienia wymagają zgody macOS. Włączenie uruchamiania przy logowaniu może
-wymagać potwierdzenia w **Ustawienia systemowe → Ogólne → Elementy logowania i
-rozszerzenia**.
+Notifications require macOS permission. Enabling launch at login may require
+confirmation in **System Settings → General → Login Items & Extensions**.
 
-## Prywatność i bezpieczeństwo
+## Privacy and security
 
-- brak zależności zewnętrznych SwiftPM;
-- brak sieci, telemetrii i analityki;
-- brak subprocessów, XPC i helpera uprzywilejowanego;
-- puste entitlements;
-- AppleSMC jest używane wyłącznie do odczytu z dokładnej listy kluczy dla
-  obsługiwanego modelu i kompilacji systemu;
-- ustawienia aplikacji są przechowywane lokalnie w `UserDefaults`.
+- no external SwiftPM dependencies;
+- no networking, telemetry, or analytics;
+- no subprocesses, XPC, or privileged helper;
+- empty entitlements;
+- read-only AppleSMC access using an exact sensor-key allowlist for the
+  supported model and OS build;
+- preferences are stored locally in `UserDefaults`.
 
-## Testy
+## Tests
 
-Podstawowy zestaw testów:
+Run the main test suite:
 
 ```bash
 swift test -Xswiftc -strict-concurrency=complete
 ```
 
-Dodatkowe bramki jakości:
+Additional quality gates:
 
 ```bash
 swift test --sanitize=thread -Xswiftc -strict-concurrency=complete
@@ -76,11 +75,11 @@ THERMOBAR_RUN_PERFORMANCE=1 swift test -c release --filter SensorReadPerformance
 ./Scripts/verify-security.sh build/ThermoBar.app
 ```
 
-Testy `Live` i pomiar wydajności są przeznaczone dla dokładnie obsługiwanego
-modelu i kompilacji systemu.
+The `Live` tests and performance benchmark are intended for the exact supported
+Mac model and OS build.
 
-## Informacje o kodzie zewnętrznym
+## Third-party information
 
-Projekt nie ma zależności wykonywalnych innych firm. Informacje o źródle wiedzy
-dotyczącej układu ABI AppleSMC znajdują się w
+The project has no executable third-party dependencies. Attribution for the
+source used to understand the AppleSMC ABI layout is provided in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
