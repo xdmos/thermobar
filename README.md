@@ -27,7 +27,7 @@ AppleSMC.
 - Apple Silicon.
 
 Full access to private sensors is currently verified only on `Mac17,9` running
-macOS build `26A5388g`. On a different model or after a system update,
+macOS builds `26A5388g` or `26A5406e`. On a different model or after a system update,
 ThermoBar intentionally disables unverified temperature, GPU, and RPM readings
 instead of guessing sensor keys. Public CPU, memory, and macOS thermal-state
 metrics remain available.

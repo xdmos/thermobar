@@ -41,7 +41,10 @@ public struct PrivateMetricSchema: Equatable, Sendable {
 
 public enum PrivateMetricSchemaRegistry {
     public static func schema(model: String, build: String) -> PrivateMetricSchema? {
-        guard model == "Mac17,9", build == "26A5388g" else {
+        switch (model, build) {
+        case ("Mac17,9", "26A5388g"), ("Mac17,9", "26A5406e"):
+            break
+        default:
             return nil
         }
 
