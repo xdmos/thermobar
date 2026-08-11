@@ -1,0 +1,182 @@
+import AppKit
+import SwiftUI
+
+struct PanelWindowBridge: NSViewRepresentable {
+    let store: PanelFrameStore
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(store: store)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.scheduleInstall(for: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.scheduleInstall(for: nsView)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.dismantle(view: nsView)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSWindowDelegate {
+        private let store: PanelFrameStore
+        private weak var window: NSWindow?
+        // AppKit asks NSObject forwarding hooks from Objective-C, outside Swift's
+        // actor annotations; AppKit delivers these delegate callbacks on main.
+        nonisolated(unsafe) private weak var forwardedDelegate: NSWindowDelegate?
+        private var hasRestoredFrame = false
+        private var isApplyingProgrammaticFrame = false
+        private var isUserMoveActive = false
+        private var isObservingScreenParameters = false
+        private weak var activeView: NSView?
+        private var installationGeneration: UInt64 = 0
+
+        init(store: PanelFrameStore) {
+            self.store = store
+            super.init()
+        }
+
+        func scheduleInstall(for view: NSView) {
+            let generation = activate(view: view)
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view else { return }
+                self.installIfCurrent(on: view.window, view: view, generation: generation)
+            }
+        }
+
+        func activate(view: NSView) -> UInt64 {
+            installationGeneration &+= 1
+            activeView = view
+            return installationGeneration
+        }
+
+        func installIfCurrent(on window: NSWindow?, view: NSView, generation: UInt64) {
+            guard installationGeneration == generation, activeView === view else { return }
+            install(on: window)
+        }
+
+        func dismantle(view: NSView) {
+            guard activeView === view else { return }
+            installationGeneration &+= 1
+            activeView = nil
+            uninstall()
+        }
+
+        func install(on window: NSWindow?) {
+            guard let window else { return }
+            if self.window !== window {
+                uninstall()
+                self.window = window
+                hasRestoredFrame = false
+                isUserMoveActive = false
+            }
+
+            // Keep SwiftUI's existing delegate in the chain. The proxy owns only
+            // move notifications and forwards every other optional delegate method.
+            if window.delegate !== self {
+                forwardedDelegate = window.delegate
+                window.delegate = self
+            }
+
+            window.isMovableByWindowBackground = true
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            startObservingScreenParameters()
+
+            guard !hasRestoredFrame else { return }
+            hasRestoredFrame = true
+            applyProgrammaticFrame(store.restoreFrame())
+        }
+
+        func uninstall() {
+            guard let window else {
+                stopObservingScreenParameters()
+                forwardedDelegate = nil
+                return
+            }
+            if window.delegate === self {
+                window.delegate = forwardedDelegate
+            }
+            self.window = nil
+            forwardedDelegate = nil
+            hasRestoredFrame = false
+            isApplyingProgrammaticFrame = false
+            isUserMoveActive = false
+            stopObservingScreenParameters()
+        }
+
+        func windowWillMove(_ notification: Notification) {
+            isUserMoveActive = !isApplyingProgrammaticFrame
+            forwardedDelegate?.windowWillMove?(notification)
+        }
+
+        func windowDidMove(_ notification: Notification) {
+            defer {
+                isUserMoveActive = false
+                forwardedDelegate?.windowDidMove?(notification)
+            }
+            guard isUserMoveActive, !isApplyingProgrammaticFrame, let window else { return }
+            store.save(frame: window.frame, on: window.screen)
+        }
+
+        @objc private func screenParametersChanged(_ notification: Notification) {
+            guard let window else { return }
+            let frame = PanelFrameStore.clamp(window.frame, screens: NSScreen.screens.compactMap { screen in
+                guard let identifier = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value else {
+                    return nil
+                }
+                return .init(displayIdentifier: identifier, visibleFrame: screen.visibleFrame)
+            })
+            applyProgrammaticFrame(frame)
+        }
+
+        override func responds(to selector: Selector!) -> Bool {
+            super.responds(to: selector) || forwardedDelegate?.responds(to: selector) == true
+        }
+
+        override func forwardingTarget(for selector: Selector!) -> Any? {
+            guard selector != #selector(windowWillMove(_:)), selector != #selector(windowDidMove(_:)),
+                  forwardedDelegate?.responds(to: selector) == true
+            else {
+                return super.forwardingTarget(for: selector)
+            }
+            return forwardedDelegate
+        }
+
+        private func applyProgrammaticFrame(_ frame: CGRect?) {
+            guard let frame, let window, window.frame != frame else { return }
+            isApplyingProgrammaticFrame = true
+            window.setFrame(frame, display: true)
+            isApplyingProgrammaticFrame = false
+        }
+
+        private func startObservingScreenParameters() {
+            guard !isObservingScreenParameters else { return }
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(screenParametersChanged(_:)),
+                name: NSApplication.didChangeScreenParametersNotification,
+                object: nil
+            )
+            isObservingScreenParameters = true
+        }
+
+        private func stopObservingScreenParameters() {
+            guard isObservingScreenParameters else { return }
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSApplication.didChangeScreenParametersNotification,
+                object: nil
+            )
+            isObservingScreenParameters = false
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+    }
+}
