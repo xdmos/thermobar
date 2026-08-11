@@ -4,6 +4,8 @@ ThermoBar is a lightweight macOS menu bar app that displays your Mac's current
 resource usage and thermal condition. It runs entirely locally, sends no
 telemetry, and requires neither an account nor an Internet connection.
 
+![ThermoBar floating panel showing temperatures, resource usage, and fan speed](Assets/thermobar-panel.png)
+
 ## Features
 
 - floating panel and menu bar interface;
