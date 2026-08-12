@@ -149,6 +149,128 @@ struct PanelFrameStoreTests {
         #expect(firstWindow.delegate === firstDelegate)
     }
 
+    @Test @MainActor func bridgeAtFullOpacityPreservesOriginalVisualProperties() {
+        let suiteName = "PanelWindowBridgeVisualTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("Could not create isolated defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let firstWindow = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 238, height: 330),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        firstWindow.isOpaque = true
+        firstWindow.backgroundColor = .windowBackgroundColor
+        firstWindow.alphaValue = 0.80
+
+        let bridge = PanelWindowBridge(store: PanelFrameStore(preferences: AppPreferences(defaults: defaults)))
+        let coordinator = bridge.makeCoordinator()
+        coordinator.install(on: firstWindow)
+
+        #expect(firstWindow.isOpaque)
+        #expect(firstWindow.backgroundColor?.isEqual(NSColor.windowBackgroundColor) == true)
+        #expect(firstWindow.alphaValue == 0.80)
+    }
+
+    @Test @MainActor func bridgeTransitionsItsHostSurfaceWithoutOverwritingCapturedOriginals() {
+        let suiteName = "PanelWindowBridgeVisualTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("Could not create isolated defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 238, height: 330),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
+        window.alphaValue = 0.80
+
+        let bridge = PanelWindowBridge(store: PanelFrameStore(preferences: AppPreferences(defaults: defaults)))
+        let coordinator = bridge.makeCoordinator()
+        coordinator.install(on: window)
+        coordinator.setPanelOpacity(0.95)
+
+        #expect(window.isOpaque)
+        #expect(window.backgroundColor?.isEqual(NSColor.windowBackgroundColor) == true)
+        #expect(window.alphaValue == 0.95)
+
+        coordinator.setPanelOpacity(1.00)
+        #expect(window.isOpaque)
+        #expect(window.backgroundColor?.isEqual(NSColor.windowBackgroundColor) == true)
+        #expect(window.alphaValue == 0.80)
+
+        coordinator.setPanelOpacity(0.95)
+        coordinator.setPanelOpacity(1.00)
+        #expect(window.isOpaque)
+        #expect(window.backgroundColor?.isEqual(NSColor.windowBackgroundColor) == true)
+        #expect(window.alphaValue == 0.80)
+    }
+
+    @Test @MainActor func bridgeRestoresVisualPropertiesWhenItMovesUninstallsOrDismantles() {
+        let suiteName = "PanelWindowBridgeVisualTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("Could not create isolated defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let firstWindow = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 238, height: 330),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        firstWindow.isOpaque = true
+        firstWindow.backgroundColor = .windowBackgroundColor
+        firstWindow.alphaValue = 0.80
+
+        let secondWindow = NSWindow(
+            contentRect: CGRect(x: 300, y: 0, width: 238, height: 330),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        secondWindow.isOpaque = false
+        secondWindow.backgroundColor = .systemRed
+        secondWindow.alphaValue = 0.70
+
+        let bridge = PanelWindowBridge(store: PanelFrameStore(preferences: AppPreferences(defaults: defaults)), panelOpacity: 0.95)
+        let coordinator = bridge.makeCoordinator()
+        coordinator.install(on: firstWindow)
+        coordinator.install(on: secondWindow)
+
+        #expect(firstWindow.isOpaque)
+        #expect(firstWindow.backgroundColor?.isEqual(NSColor.windowBackgroundColor) == true)
+        #expect(firstWindow.alphaValue == 0.80)
+        #expect(!secondWindow.isOpaque)
+        #expect(secondWindow.backgroundColor?.isEqual(NSColor.systemRed) == true)
+        #expect(secondWindow.alphaValue == 0.95)
+
+        coordinator.uninstall()
+
+        #expect(!secondWindow.isOpaque)
+        #expect(secondWindow.backgroundColor?.isEqual(NSColor.systemRed) == true)
+        #expect(secondWindow.alphaValue == 0.70)
+
+        let view = NSView(frame: .zero)
+        let generation = coordinator.activate(view: view)
+        coordinator.installIfCurrent(on: firstWindow, view: view, generation: generation)
+        coordinator.setPanelOpacity(0.95)
+        coordinator.dismantle(view: view)
+        #expect(firstWindow.isOpaque)
+        #expect(firstWindow.backgroundColor?.isEqual(NSColor.windowBackgroundColor) == true)
+        #expect(firstWindow.alphaValue == 0.80)
+    }
+
 }
 
 @MainActor

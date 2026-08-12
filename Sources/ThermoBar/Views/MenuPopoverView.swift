@@ -32,6 +32,17 @@ struct MenuPopoverView: View {
                 }
                 model.setPanelVisibilityIntent(shouldShow)
             }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(panelOpacityControl.accessibilityLabel)
+                    Spacer()
+                    Text(verbatim: panelOpacityControl.accessibilityValue())
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: panelOpacityBinding, in: PanelOpacityControlConfiguration.range, step: PanelOpacityControlConfiguration.step)
+                    .accessibilityLabel(Text(panelOpacityControl.accessibilityLabel))
+                    .accessibilityValue(Text(verbatim: panelOpacityControl.accessibilityValue()))
+            }
             Toggle(ThermoBarCopy.launchAtLogin, isOn: launchAtLoginBinding)
             launchAtLoginStatus
             Toggle(ThermoBarCopy.thermalNotifications, isOn: notificationBinding)
@@ -111,6 +122,17 @@ struct MenuPopoverView: View {
         )
     }
 
+    var panelOpacityBinding: Binding<Double> {
+        Binding(
+            get: { model.panelOpacity },
+            set: { model.setPanelOpacity($0) }
+        )
+    }
+
+    private var panelOpacityControl: PanelOpacityControlConfiguration {
+        PanelOpacityControlConfiguration(value: model.panelOpacity)
+    }
+
     private var notificationBinding: Binding<Bool> {
         Binding(
             get: { model.notificationsEnabled },
@@ -133,6 +155,22 @@ struct MenuPopoverView: View {
             return String(localized: ThermoBarCopy.stale)
         }
         return String(localized: ThermoBarPresentation.verdict(for: snapshot.thermalLevel))
+    }
+}
+
+struct PanelOpacityControlConfiguration {
+    static let range: ClosedRange<Double> = 0.30...1.00
+    static let step = 0.05
+    static let accessibilityLabelKey: String.LocalizationValue = "setting.panel-opacity"
+
+    let value: Double
+
+    var accessibilityLabel: LocalizedStringResource {
+        ThermoBarCopy.panelOpacity
+    }
+
+    func accessibilityValue(locale: Locale = .current) -> String {
+        value.formatted(.percent.precision(.fractionLength(0)).locale(locale))
     }
 }
 

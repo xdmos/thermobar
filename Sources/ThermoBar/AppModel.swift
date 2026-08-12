@@ -26,6 +26,7 @@ final class AppModel {
     private(set) var diagnostic: MetricError?
     private(set) var diagnostics: [SamplingDiagnostic] = []
     private(set) var panelVisible: Bool
+    private(set) var panelOpacity: Double
     private(set) var notificationsEnabled: Bool
     private(set) var launchAtLoginEnabled: Bool
     private(set) var launchAtLoginStatus: LaunchAtLoginStatus
@@ -63,6 +64,7 @@ final class AppModel {
         self.launchAtLogin = launchAtLogin
         self.notificationStateDidChange = notificationStateDidChange
         panelVisible = preferences.panelVisible
+        panelOpacity = preferences.panelOpacity
         notificationsEnabled = preferences.thermalNotifications
         launchAtLoginStatus = launchAtLogin.status
         launchAtLoginEnabled = launchAtLogin.status == .enabled
@@ -125,6 +127,11 @@ final class AppModel {
         panelVisibilityReconciliationTask = Task { @MainActor [weak self] in
             await self?.reconcilePanelVisibility(generation: generation)
         }
+    }
+
+    func setPanelOpacity(_ opacity: Double) {
+        preferences.panelOpacity = opacity
+        panelOpacity = preferences.panelOpacity
     }
 
     private func recordPanelVisibilityIntent(_ visible: Bool) -> UInt64? {

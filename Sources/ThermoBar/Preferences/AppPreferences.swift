@@ -12,12 +12,15 @@ struct PanelFrameRecord: Codable, Equatable, Sendable {
 final class AppPreferences {
     private enum Key {
         static let panelVisible = "thermobar.panelVisible"
+        static let panelOpacity = "thermobar.panelOpacity"
         static let launchAtLogin = "thermobar.launchAtLogin"
         static let thermalNotifications = "thermobar.thermalNotifications"
         static let panelFrame = "thermobar.panelFrame"
     }
 
     private let defaults: UserDefaults
+    private let panelOpacityRange: ClosedRange<Double> = 0.30...1.00
+    private let defaultPanelOpacity = 1.00
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -26,6 +29,21 @@ final class AppPreferences {
     var panelVisible: Bool {
         get { defaults.object(forKey: Key.panelVisible) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.panelVisible) }
+    }
+
+    var panelOpacity: Double {
+        get {
+            guard let value = defaults.object(forKey: Key.panelOpacity) as? Double,
+                  value.isFinite,
+                  panelOpacityRange.contains(value) else {
+                return defaultPanelOpacity
+            }
+            return value
+        }
+        set {
+            let value = newValue.isFinite ? min(max(newValue, panelOpacityRange.lowerBound), panelOpacityRange.upperBound) : defaultPanelOpacity
+            defaults.set(value, forKey: Key.panelOpacity)
+        }
     }
 
     var launchAtLogin: Bool {

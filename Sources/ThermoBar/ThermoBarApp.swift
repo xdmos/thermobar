@@ -63,7 +63,7 @@ private struct FloatingPanelSceneContent: View {
                 model.setPanelVisibilityIntent(false)
             }
         )
-        .background(PanelWindowBridge(store: frameStore))
+        .background(PanelWindowBridge(store: frameStore, panelOpacity: model.panelOpacity))
         .onDisappear {
             model.setPanelVisibilityIntent(false)
         }

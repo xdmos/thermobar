@@ -3,9 +3,15 @@ import SwiftUI
 
 struct PanelWindowBridge: NSViewRepresentable {
     let store: PanelFrameStore
+    let panelOpacity: Double
+
+    init(store: PanelFrameStore, panelOpacity: Double = 1.00) {
+        self.store = store
+        self.panelOpacity = panelOpacity
+    }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(store: store)
+        Coordinator(store: store, panelOpacity: panelOpacity)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -15,6 +21,7 @@ struct PanelWindowBridge: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.setPanelOpacity(panelOpacity)
         context.coordinator.scheduleInstall(for: nsView)
     }
 
@@ -25,7 +32,9 @@ struct PanelWindowBridge: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSWindowDelegate {
         private let store: PanelFrameStore
+        private var panelOpacity: Double
         private weak var window: NSWindow?
+        private var originalVisualState: WindowVisualState?
         // AppKit asks NSObject forwarding hooks from Objective-C, outside Swift's
         // actor annotations; AppKit delivers these delegate callbacks on main.
         nonisolated(unsafe) private weak var forwardedDelegate: NSWindowDelegate?
@@ -36,9 +45,16 @@ struct PanelWindowBridge: NSViewRepresentable {
         private weak var activeView: NSView?
         private var installationGeneration: UInt64 = 0
 
-        init(store: PanelFrameStore) {
+        init(store: PanelFrameStore, panelOpacity: Double = 1.00) {
             self.store = store
+            self.panelOpacity = panelOpacity
             super.init()
+        }
+
+        func setPanelOpacity(_ panelOpacity: Double) {
+            self.panelOpacity = panelOpacity
+            guard let window else { return }
+            configureHostSurface(window)
         }
 
         func scheduleInstall(for view: NSView) {
@@ -72,9 +88,12 @@ struct PanelWindowBridge: NSViewRepresentable {
             if self.window !== window {
                 uninstall()
                 self.window = window
+                originalVisualState = WindowVisualState(window: window)
                 hasRestoredFrame = false
                 isUserMoveActive = false
             }
+
+            configureHostSurface(window)
 
             // Keep SwiftUI's existing delegate in the chain. The proxy owns only
             // move notifications and forwards every other optional delegate method.
@@ -101,6 +120,7 @@ struct PanelWindowBridge: NSViewRepresentable {
             if window.delegate === self {
                 window.delegate = forwardedDelegate
             }
+            restoreVisualState(of: window)
             self.window = nil
             forwardedDelegate = nil
             hasRestoredFrame = false
@@ -154,6 +174,28 @@ struct PanelWindowBridge: NSViewRepresentable {
             isApplyingProgrammaticFrame = false
         }
 
+        private func configureHostSurface(_ window: NSWindow) {
+            if panelOpacity == 1.00 {
+                applyOriginalVisualState(to: window)
+            } else {
+                // Keep the original native surface participating in hit-testing
+                // and let AppKit compose the whole panel at the selected opacity.
+                window.alphaValue = CGFloat(panelOpacity)
+            }
+        }
+
+        private func applyOriginalVisualState(to window: NSWindow) {
+            guard let originalVisualState else { return }
+            window.isOpaque = originalVisualState.isOpaque
+            window.backgroundColor = originalVisualState.backgroundColor
+            window.alphaValue = originalVisualState.alphaValue
+        }
+
+        private func restoreVisualState(of window: NSWindow) {
+            applyOriginalVisualState(to: window)
+            self.originalVisualState = nil
+        }
+
         private func startObservingScreenParameters() {
             guard !isObservingScreenParameters else { return }
             NotificationCenter.default.addObserver(
@@ -177,6 +219,18 @@ struct PanelWindowBridge: NSViewRepresentable {
 
         deinit {
             NotificationCenter.default.removeObserver(self)
+        }
+
+        private struct WindowVisualState {
+            let isOpaque: Bool
+            let backgroundColor: NSColor
+            let alphaValue: CGFloat
+
+            @MainActor init(window: NSWindow) {
+                isOpaque = window.isOpaque
+                backgroundColor = window.backgroundColor
+                alphaValue = window.alphaValue
+            }
         }
     }
 }

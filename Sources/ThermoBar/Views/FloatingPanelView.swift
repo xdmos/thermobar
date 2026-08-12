@@ -8,6 +8,8 @@ struct FloatingPanelView: View {
     private let diagnostics: [SamplingDiagnostic]
     private let accessibilityOverride: PreviewAccessibilityOverride?
     private let onClose: (() -> Void)?
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     init(snapshot: SystemSnapshot?, mode: SamplingMode, diagnostics: [SamplingDiagnostic] = [], nowNanoseconds: UInt64? = nil, accessibilityOverride: PreviewAccessibilityOverride? = nil, onClose: (() -> Void)? = nil) {
         self.snapshot = snapshot
@@ -23,20 +25,23 @@ struct FloatingPanelView: View {
             FloatingPanelContent(
                 presentation: ThermoBarPresentation(snapshot: snapshot, mode: mode, nowNanoseconds: now),
                 sensorStatus: ThermoBarPresentation.sensorStatus(snapshot: snapshot, diagnostics: diagnostics),
-                accessibilityOverride: accessibilityOverride,
+                background: FloatingPanelBackground(contrast: effectiveContrast),
+                reduceMotion: effectiveReduceMotion,
                 onClose: onClose
             )
         }
     }
+
+    private var effectiveContrast: ColorSchemeContrast { accessibilityOverride?.contrast ?? colorSchemeContrast }
+    private var effectiveReduceMotion: Bool { accessibilityOverride?.reduceMotion ?? accessibilityReduceMotion }
 }
 
-private struct FloatingPanelContent: View {
+struct FloatingPanelContent: View {
     let presentation: ThermoBarPresentation
     let sensorStatus: ThermoBarPresentation.SensorStatus
-    let accessibilityOverride: PreviewAccessibilityOverride?
+    let background: FloatingPanelBackground
+    let reduceMotion: Bool
     let onClose: (() -> Void)?
-    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -48,25 +53,29 @@ private struct FloatingPanelContent: View {
         }
         .padding(14)
         .frame(width: 238, alignment: .leading)
-        .background(effectiveContrast == .increased ? .thickMaterial : .regularMaterial, in: .rect(cornerRadius: 16))
-        .transaction { transaction in if effectiveReduceMotion { transaction.animation = nil } }
+        .background {
+            background
+        }
+        .transaction { transaction in if reduceMotion { transaction.animation = nil } }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(ThermoBarCopy.appName))
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(ThermoBarCopy.chipHotspot)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 6)
-                if let onClose {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark.circle.fill")
+            ZStack {
+                HStack {
+                    Text(ThermoBarCopy.chipHotspot)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 6)
+                    if let onClose {
+                        Button(action: onClose) {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text(ThermoBarCopy.hidePanel))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(ThermoBarCopy.hidePanel))
                 }
             }
             HStack(alignment: .firstTextBaseline) {
@@ -138,8 +147,20 @@ private struct FloatingPanelContent: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var effectiveContrast: ColorSchemeContrast { accessibilityOverride?.contrast ?? colorSchemeContrast }
-    private var effectiveReduceMotion: Bool { accessibilityOverride?.reduceMotion ?? accessibilityReduceMotion }
+}
+
+struct FloatingPanelBackground: View {
+    let contrast: ColorSchemeContrast
+
+    var body: some View {
+        if contrast == .increased {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.thickMaterial)
+        } else {
+            Color.clear
+                .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        }
+    }
 }
 
 struct PreviewAccessibilityOverride: Equatable {
@@ -418,6 +439,7 @@ enum ThermoBarCopy {
     static let menuBarTemperature = resource("accessibility.menu-temperature")
     static let showPanel = resource("action.show-panel")
     static let hidePanel = resource("action.hide-panel")
+    static let panelOpacity = resource("setting.panel-opacity")
     static let launchAtLogin = resource("setting.launch-at-login")
     static let thermalNotifications = resource("setting.thermal-notifications")
     static let settings = resource("action.settings")

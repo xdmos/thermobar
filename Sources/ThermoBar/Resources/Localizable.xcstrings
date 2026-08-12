@@ -26,6 +26,7 @@
     "panel.chip-hotspot" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Najgorętszy punkt układu" } } } },
     "preview.controls" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Interaktywna kontrolka podglądu" } } } },
     "setting.launch-at-login" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Uruchamiaj przy logowaniu" } } } },
+    "setting.panel-opacity" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Przezroczystość panelu" } } } },
     "setting.thermal-notifications" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Powiadomienia termiczne" } } } },
     "settings.general" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Ogólne" } } } },
     "settings.notification-instructions" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Jeśli powiadomienia są zablokowane, otwórz: Ustawienia systemowe → Powiadomienia → ThermoBar." } } } },
