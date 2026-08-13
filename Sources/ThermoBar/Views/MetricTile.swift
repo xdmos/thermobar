@@ -10,10 +10,10 @@ struct MetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.caption)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
             Text(verbatim: value)
-                .font(.headline.monospacedDigit())
+                .font(.title3.monospacedDigit())
             if let fraction {
                 ProgressView(value: fraction)
                     .tint(tint)
@@ -21,7 +21,7 @@ struct MetricTile: View {
             }
             if let detail {
                 Text(verbatim: detail)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }

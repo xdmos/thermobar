@@ -3,8 +3,9 @@ import Observation
 import ThermoBarCore
 
 protocol SamplingControlling: Sendable {
-    func snapshots() async -> AsyncStream<SystemSnapshot>
-    func setMode(_ mode: SamplingMode) async
+    func snapshots() async -> AsyncStream<SamplingSnapshot>
+    func thermalSamples() async -> AsyncStream<ThermalSample>
+    func setMode(_ mode: SamplingMode, transitionID: UUID) async -> SamplingTransitionReceipt
     func currentDiagnostics() async -> [SamplingDiagnostic]
 }
 
@@ -41,6 +42,8 @@ final class AppModel {
     @ObservationIgnored private var isStreamReady = false
     @ObservationIgnored private var isSleeping = false
     @ObservationIgnored private var panelVisibilityGeneration: UInt64 = 0
+    @ObservationIgnored private var activeTransitionID = UUID()
+    @ObservationIgnored private var thermalTask: Task<Void, Never>?
 
     convenience init(model: String, build: String, preferences: AppPreferences = .init()) {
         self.init(
@@ -74,42 +77,35 @@ final class AppModel {
         guard streamTask == nil else { return }
         let sampler = sampler
         streamTask = Task { [weak self, sampler, notifications] in
+            // Attach both continuations before asking the sampler for its immediate sample.
             let snapshots = await sampler.snapshots()
+            let thermal = await sampler.thermalSamples()
             guard self != nil else { return }
             self?.isStreamReady = true
-            let mode: SamplingMode
-            if let model = self {
-                mode = model.isSleeping ? .sleeping : model.activeSamplingMode
-            } else {
-                return
+            let mode = self?.isSleeping == true ? SamplingMode.sleeping : self?.activeSamplingMode ?? .sleeping
+            self?.thermalTask = Task { [weak self, notifications] in
+                var baseline = true
+                for await sample in thermal {
+                    guard let self else { return }
+                    let outcome: NotificationController.Outcome
+                    if baseline { baseline = false; outcome = await notifications.restore(enabledPreference: self.notificationsEnabled, currentThermalLevel: sample.level) }
+                    else if self.notificationsEnabled { outcome = await notifications.consume(thermalLevel: sample.level, transitionTimestamp: sample.monotonicNanoseconds) }
+                    else { continue }
+                    self.applyNotificationOutcome(outcome)
+                }
             }
-            await sampler.setMode(mode)
-            var needsNotificationBaseline = true
-            for await value in snapshots {
+            _ = await self?.requestMode(mode)
+            for await delivered in snapshots {
                 guard self != nil else { return }
+                // Accept (or drop) the identity-bearing delivery before the first
+                // suspension. If sleep starts while diagnostics are pending it
+                // synchronously redacts `snapshot`, and this loop retains only the
+                // transition UUID across that suspension.
+                guard let acceptedTransitionID = self?.applySnapshotIfCurrent(delivered) else { continue }
                 let diagnostics = await sampler.currentDiagnostics()
                 guard self != nil else { return }
-                if self?.snapshot != value {
-                    self?.snapshot = value
-                }
-                self?.applyDiagnostics(diagnostics, snapshot: value)
-                if needsNotificationBaseline {
-                    needsNotificationBaseline = false
-                    guard let notificationsEnabled = self?.notificationsEnabled else { return }
-                    let outcome = await notifications.restore(
-                        enabledPreference: notificationsEnabled,
-                        currentThermalLevel: value.thermalLevel
-                    )
-                    guard self != nil else { return }
-                    self?.applyNotificationOutcome(outcome)
-                } else if self?.notificationsEnabled == true {
-                    let outcome = await notifications.consume(
-                        thermalLevel: value.thermalLevel,
-                        transitionTimestamp: value.monotonicNanoseconds
-                    )
-                    guard self != nil else { return }
-                    self?.applyNotificationOutcome(outcome)
-                }
+                guard self?.accepts(transitionID: acceptedTransitionID) == true else { continue }
+                self?.applyDiagnostics(diagnostics, snapshot: self?.snapshot)
             }
         }
     }
@@ -145,7 +141,7 @@ final class AppModel {
     private func reconcilePanelVisibility(generation: UInt64) async {
         guard generation == panelVisibilityGeneration, isStreamReady, !isSleeping else { return }
         let intendedMode = activeSamplingMode
-        await sampler.setMode(intendedMode)
+        _ = await requestMode(intendedMode)
         // A newer intent always schedules its own reconciliation. This guard avoids
         // any stale post-await work from treating an older mode as current.
         guard generation == panelVisibilityGeneration else { return }
@@ -153,10 +149,10 @@ final class AppModel {
 
     func retrySensors() async {
         guard isStreamReady, !isSleeping else { return }
-        await sampler.setMode(.sleeping)
+        _ = await requestMode(.sleeping)
         guard !isSleeping else { return }
 
-        await sampler.setMode(activeSamplingMode)
+        _ = await requestMode(activeSamplingMode)
         guard !isSleeping else { return }
         applyDiagnostics(await sampler.currentDiagnostics(), snapshot: snapshot)
     }
@@ -186,12 +182,14 @@ final class AppModel {
         switch event {
         case .willSleep:
             isSleeping = true
+            activeTransitionID = UUID()
+            if let snapshot { self.snapshot = snapshot.replacing(resourceConsumers: .inactive) }
             guard isStreamReady else { return }
-            await sampler.setMode(.sleeping)
+            _ = await sampler.setMode(.sleeping, transitionID: activeTransitionID)
         case .didWake:
             isSleeping = false
             guard isStreamReady else { return }
-            await sampler.setMode(activeSamplingMode)
+            _ = await requestMode(activeSamplingMode)
         case .didActivate:
             refreshLaunchAtLoginStatus()
             let outcome = await notifications.reconcileOnActivation(currentThermalLevel: currentThermalLevel)
@@ -207,6 +205,23 @@ final class AppModel {
 
     private var currentThermalLevel: ThermalLevel {
         snapshot?.thermalLevel ?? .nominal
+    }
+    private func requestMode(_ mode: SamplingMode) async -> SamplingTransitionReceipt {
+        let id = UUID(); activeTransitionID = id
+        let receipt = await sampler.setMode(mode, transitionID: id)
+        // A same-mode join deliberately keeps the sampler's existing stable UUID,
+        // so `isCurrent` is false for our fresh requested UUID. It is still the
+        // authoritative identity while this remains the latest AppModel intent.
+        if activeTransitionID == id { activeTransitionID = receipt.currentTransitionID }
+        return receipt
+    }
+    private func accepts(transitionID: UUID) -> Bool {
+        !isSleeping && transitionID == activeTransitionID
+    }
+    private func applySnapshotIfCurrent(_ delivered: SamplingSnapshot) -> UUID? {
+        guard accepts(transitionID: delivered.transitionID) else { return nil }
+        if snapshot != delivered.value { snapshot = delivered.value }
+        return delivered.transitionID
     }
 
     private func refreshLaunchAtLoginStatus() {
@@ -230,5 +245,6 @@ final class AppModel {
     deinit {
         streamTask?.cancel()
         panelVisibilityReconciliationTask?.cancel()
+        thermalTask?.cancel()
     }
 }

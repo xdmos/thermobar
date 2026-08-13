@@ -1,6 +1,10 @@
 import SwiftUI
 import ThermoBarCore
 
+enum FloatingPanelLayout {
+    static let width: CGFloat = 260
+}
+
 struct FloatingPanelView: View {
     private let snapshot: SystemSnapshot?
     private let mode: SamplingMode
@@ -42,6 +46,7 @@ struct FloatingPanelContent: View {
     let background: FloatingPanelBackground
     let reduceMotion: Bool
     let onClose: (() -> Void)?
+    @ScaledMetric(relativeTo: .title2) private var hotspotFontSize = 32
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -52,7 +57,10 @@ struct FloatingPanelContent: View {
             footer
         }
         .padding(14)
-        .frame(width: 238, alignment: .leading)
+        .frame(width: FloatingPanelLayout.width, alignment: .leading)
+        // The floating scene must follow the panel's intrinsic height. Without
+        // this, a legacy 330-point window can compress and clip the process rows.
+        .fixedSize(horizontal: false, vertical: true)
         .background {
             background
         }
@@ -66,7 +74,7 @@ struct FloatingPanelContent: View {
             ZStack {
                 HStack {
                     Text(ThermoBarCopy.chipHotspot)
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 6)
                     if let onClose {
@@ -80,11 +88,11 @@ struct FloatingPanelContent: View {
             }
             HStack(alignment: .firstTextBaseline) {
                 Text(verbatim: presentation.hotspot)
-                    .font(.system(size: 30, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(.system(size: hotspotFontSize, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(presentation.thermalTint)
                 Spacer(minLength: 6)
                 Text(presentation.thermalVerdict)
-                    .font(.subheadline.weight(.medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(presentation.thermalTint)
             }
         }
@@ -129,22 +137,26 @@ struct FloatingPanelContent: View {
     }
 
     private var footer: some View {
+        VStack(alignment: .leading, spacing: 10) {
         if let diagnostic = ThermoBarPresentation.footerDiagnostic(for: sensorStatus) {
-            return HStack(spacing: 6) {
+             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
-                Text(verbatim: ThermoBarPresentation.diagnostic(diagnostic)).font(.caption2).foregroundStyle(.secondary)
+                Text(verbatim: ThermoBarPresentation.diagnostic(diagnostic)).font(.caption).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
-        }
-        return HStack(spacing: 6) {
+        } else if !presentation.isFresh {
+             HStack(spacing: 6) {
             Image(systemName: presentation.isFresh ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(presentation.isFresh ? Color.secondary : .orange)
+                .foregroundStyle(.orange)
                 .accessibilityHidden(true)
             Text(presentation.freshness)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+        }
+        ResourceConsumerList(metric: presentation.resourceConsumers)
+        }
     }
 
 }
@@ -231,6 +243,7 @@ struct ThermoBarPresentation {
     let memoryFraction: Double?
     let fanFraction: Double?
     let thermalTint: Color
+    let resourceConsumers: ResourceConsumerMetric
 
     init(snapshot: SystemSnapshot?, mode: SamplingMode, nowNanoseconds: UInt64) {
         guard let snapshot,
@@ -253,6 +266,7 @@ struct ThermoBarPresentation {
             memoryFraction = nil
             fanFraction = nil
             thermalTint = .secondary
+            resourceConsumers = snapshot?.resourceConsumers ?? .init(cpu: .measuring, memory: .unavailable)
             return
         }
 
@@ -273,6 +287,7 @@ struct ThermoBarPresentation {
         memoryFraction = snapshot.memory?.usedFraction
         fanFraction = Self.fanFraction(current: snapshot.fan.fastestRPM, maximum: snapshot.fan.fastestMaximumRPM)
         thermalTint = Self.tint(for: snapshot.thermalLevel)
+        resourceConsumers = snapshot.resourceConsumers
     }
 
     static func roundedTemperature(_ value: Double) -> String {
@@ -471,22 +486,40 @@ enum ThermoBarCopy {
     static let sourceGPUUtilization = resource("sensor.gpu-utilization")
     static let sourceCPUUtilization = resource("sensor.cpu-utilization")
     static let sourceMemory = resource("sensor.memory")
+    static let consumerCPUTitle = resource("consumer.cpu-title")
+    static let consumerMemoryTitle = resource("consumer.memory-title")
+    static let consumerMeasuring = resource("consumer.measuring")
+    static let consumerUnavailable = resource("consumer.unavailable")
+    static let consumerCPUAccessibility = resource("consumer.cpu-accessibility")
+    static let consumerMemoryAccessibility = resource("consumer.memory-accessibility")
 }
 
-#Preview("Stan nominalny", traits: .fixedLayout(width: 238, height: 310)) {
+#Preview("Początkowy pomiar", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 360)) {
+    FloatingPanelView(snapshot: nil, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+}
+
+#Preview("Pomiar CPU i RAM", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 430)) {
+    FloatingPanelView(snapshot: PreviewFixtures.measuring, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+}
+
+#Preview("Rankingi procesów", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
     FloatingPanelView(snapshot: PreviewFixtures.nominal, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
         .preferredColorScheme(.dark)
 }
 
-#Preview("Stan poważny", traits: .fixedLayout(width: 238, height: 310)) {
+#Preview("Brak danych procesów", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 430)) {
+    FloatingPanelView(snapshot: PreviewFixtures.unavailable, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+}
+
+#Preview("Stan poważny", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
     FloatingPanelView(snapshot: PreviewFixtures.serious, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
-#Preview("Nieaktualne dane", traits: .fixedLayout(width: 238, height: 310)) {
+#Preview("Nieaktualne dane", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
     FloatingPanelView(snapshot: PreviewFixtures.stale, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
-#Preview("Nieobsługiwany schemat", traits: .fixedLayout(width: 238, height: 310)) {
+#Preview("Nieobsługiwany schemat", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
     FloatingPanelView(
         snapshot: PreviewFixtures.unsupportedSchema,
         mode: .visible,
@@ -495,7 +528,7 @@ enum ThermoBarCopy {
     )
 }
 
-#Preview("Częściowy błąd czujnika", traits: .fixedLayout(width: 238, height: 310)) {
+#Preview("Częściowy błąd czujnika", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
     FloatingPanelView(
         snapshot: PreviewFixtures.partialSensorFailure,
         mode: .visible,
@@ -504,7 +537,7 @@ enum ThermoBarCopy {
     )
 }
 
-#Preview("Jasny tryb i większy kontrast", traits: .fixedLayout(width: 238, height: 310)) {
+#Preview("Jasny tryb i większy kontrast", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 310)) {
     FloatingPanelView(snapshot: PreviewFixtures.nominal, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds,
         accessibilityOverride: .init(contrast: .increased, reduceMotion: false))
         .preferredColorScheme(.light)

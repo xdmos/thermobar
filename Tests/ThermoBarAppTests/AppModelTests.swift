@@ -36,6 +36,7 @@ import Testing
 
     model.start()
     await notifications.waitForRestoreRequests(1)
+    try? await Task.sleep(nanoseconds: 20_000_000)
 
     await model.setPanelVisible(true)
     await model.setPanelVisible(false)
@@ -102,6 +103,7 @@ import Testing
 
     model.start()
     await notifications.waitForRestoreRequests(1)
+    try? await Task.sleep(nanoseconds: 20_000_000)
 
     #expect(model.diagnostics == [expected])
     #expect(model.diagnostic == .readFailed)
@@ -273,6 +275,41 @@ import Testing
     #expect(await sampler.modes == [.visible])
     #expect(model.snapshot == fixture(.nominal, timestamp: 1))
     await notifications.releaseRestore()
+    await sampler.finish()
+}
+
+@Test @MainActor func duplicateWakeAdoptsTheSamplerStableUUIDAndAcceptsItsCadence() async {
+    let sampler = ControlledSampler(immediateSnapshot: fixture(.nominal, timestamp: 1))
+    let notifications = FakeNotifications(restoreOutcome: .enabled)
+    let model = AppModel(preferences: AppPreferences(defaults: isolatedDefaults()), sampler: sampler, notifications: notifications)
+    model.start()
+    await notifications.waitForRestoreRequests(1)
+    let stableID = await sampler.currentID()
+    await model.handleLifecycleEvent(.didWake) // visible is already active: this is a same-mode join
+    await sampler.emit(fixture(.serious, timestamp: 2), transitionID: stableID)
+    await waitForSnapshot(model, timestamp: 2)
+    #expect(model.snapshot?.thermalLevel == .serious)
+    await sampler.finish()
+}
+
+@Test @MainActor func pausedDiagnosticsCannotReintroduceConsumerIdentitiesAfterSleep() async {
+    let sampler = ControlledSampler(immediateSnapshot: fixture(.nominal, timestamp: 1))
+    let notifications = FakeNotifications(restoreOutcome: .enabled)
+    let model = AppModel(preferences: AppPreferences(defaults: isolatedDefaults()), sampler: sampler, notifications: notifications)
+    model.start()
+    await notifications.waitForRestoreRequests(1)
+    await sampler.pauseNextDiagnostics()
+    let consumerSnapshot = fixture(.serious, timestamp: 2, resourceConsumers: .init(
+        cpu: .available([.init(pid: 4242, name: "never-retain-me", percent: 101)]),
+        memory: .available([.init(pid: 4242, name: "never-retain-me", physicalFootprintBytes: 99)])
+    ))
+    await sampler.emit(consumerSnapshot)
+    await sampler.waitForPausedDiagnostics()
+    await model.handleLifecycleEvent(.willSleep)
+    #expect(model.snapshot?.resourceConsumers == .inactive)
+    await sampler.releasePausedDiagnostics()
+    for _ in 0..<8 { await Task.yield() }
+    #expect(model.snapshot?.resourceConsumers == .inactive)
     await sampler.finish()
 }
 
@@ -453,7 +490,7 @@ import Testing
     return defaults
 }
 
-private func fixture(_ thermalLevel: ThermalLevel, timestamp: UInt64) -> SystemSnapshot {
+private func fixture(_ thermalLevel: ThermalLevel, timestamp: UInt64, resourceConsumers: ResourceConsumerMetric = .inactive) -> SystemSnapshot {
     SystemSnapshot(
         monotonicNanoseconds: timestamp,
         cpuPercent: nil,
@@ -463,8 +500,17 @@ private func fixture(_ thermalLevel: ThermalLevel, timestamp: UInt64) -> SystemS
         fan: .available(fastestRPM: 2_500, fastestMaximumRPM: 7_900, validatedFanCount: 2),
         thermalLevel: thermalLevel,
         publicMetricError: nil,
-        privateMetricError: nil
+        privateMetricError: nil,
+        resourceConsumers: resourceConsumers
     )
+}
+
+@MainActor private func waitForSnapshot(_ model: AppModel, timestamp: UInt64) async {
+    for _ in 0..<100 {
+        if model.snapshot?.monotonicNanoseconds == timestamp { return }
+        await Task.yield()
+    }
+    Issue.record("Timed out waiting for snapshot \(timestamp)")
 }
 
 private actor ControlledSampler: SamplingControlling {
@@ -474,14 +520,20 @@ private actor ControlledSampler: SamplingControlling {
     private(set) var modes: [SamplingMode] = []
     private(set) var setModeRequests = 0
     private(set) var snapshotRequests = 0
-    private var continuation: AsyncStream<SystemSnapshot>.Continuation?
+    private var continuation: AsyncStream<SamplingSnapshot>.Continuation?
+    private var thermalContinuation: AsyncStream<ThermalSample>.Continuation?
     private var currentMode: SamplingMode = .sleeping
+    private var currentTransitionID = UUID()
     private var diagnostics: [SamplingDiagnostic]
     private var sleepingModeWaiters: [CheckedContinuation<Void, Never>] = []
     private var sleepingModePauseWaiters: [CheckedContinuation<Void, Never>] = []
     private var modeWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
     private var pausedModeWaiters: [SamplingMode: [CheckedContinuation<Void, Never>]] = [:]
     private var genericPauseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var pauseDiagnostics = false
+    private var isDiagnosticsPaused = false
+    private var pausedDiagnosticsWaiters: [CheckedContinuation<Void, Never>] = []
+    private var diagnosticsPauseWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         immediateSnapshot: SystemSnapshot? = nil,
@@ -495,17 +547,21 @@ private actor ControlledSampler: SamplingControlling {
         self.pauseOnMode = pauseOnMode
     }
 
-    func snapshots() -> AsyncStream<SystemSnapshot> {
+    func snapshots() -> AsyncStream<SamplingSnapshot> {
         snapshotRequests += 1
-        let stream = AsyncStream<SystemSnapshot>.makeStream()
+        let stream = AsyncStream<SamplingSnapshot>.makeStream()
         continuation = stream.continuation
         return stream.stream
     }
 
-    func setMode(_ mode: SamplingMode) async {
+
+    func thermalSamples() -> AsyncStream<ThermalSample> { let stream = AsyncStream<ThermalSample>.makeStream(); thermalContinuation = stream.continuation; return stream.stream }
+
+    func setMode(_ mode: SamplingMode, transitionID: UUID) async -> SamplingTransitionReceipt {
         setModeRequests += 1
-        guard mode != currentMode else { return }
+        guard mode != currentMode else { return .init(requestedTransitionID: transitionID, currentTransitionID: currentTransitionID, currentMode: mode, isCurrent: false) }
         currentMode = mode
+        currentTransitionID = transitionID
         modes.append(mode)
         let modeObservers = modeWaiters.removeValue(forKey: modes.count) ?? []
         modeObservers.forEach { $0.resume() }
@@ -521,11 +577,24 @@ private actor ControlledSampler: SamplingControlling {
             await withCheckedContinuation { sleepingModePauseWaiters.append($0) }
         }
         if modes.count == 1, let immediateSnapshot {
-            continuation?.yield(immediateSnapshot)
+            continuation?.yield(.init(value: immediateSnapshot, transitionID: transitionID))
+            thermalContinuation?.yield(.init(level: immediateSnapshot.thermalLevel, monotonicNanoseconds: immediateSnapshot.monotonicNanoseconds))
         }
+        return .init(requestedTransitionID: transitionID, currentTransitionID: currentTransitionID, currentMode: mode, isCurrent: true)
     }
 
-    func currentDiagnostics() -> [SamplingDiagnostic] { diagnostics }
+    func currentDiagnostics() async -> [SamplingDiagnostic] {
+        if pauseDiagnostics {
+            pauseDiagnostics = false
+            isDiagnosticsPaused = true
+            let observers = pausedDiagnosticsWaiters
+            pausedDiagnosticsWaiters.removeAll()
+            observers.forEach { $0.resume() }
+            await withCheckedContinuation { diagnosticsPauseWaiters.append($0) }
+            isDiagnosticsPaused = false
+        }
+        return diagnostics
+    }
 
     func setDiagnostics(_ diagnostics: [SamplingDiagnostic]) { self.diagnostics = diagnostics }
 
@@ -558,12 +627,27 @@ private actor ControlledSampler: SamplingControlling {
         waiters.forEach { $0.resume() }
     }
 
-    func emit(_ snapshot: SystemSnapshot) {
-        continuation?.yield(snapshot)
+    func currentID() -> UUID { currentTransitionID }
+
+    func emit(_ snapshot: SystemSnapshot, transitionID: UUID? = nil) {
+        continuation?.yield(.init(value: snapshot, transitionID: transitionID ?? currentTransitionID))
+        thermalContinuation?.yield(.init(level: snapshot.thermalLevel, monotonicNanoseconds: snapshot.monotonicNanoseconds))
+    }
+
+    func pauseNextDiagnostics() { pauseDiagnostics = true }
+    func waitForPausedDiagnostics() async {
+        guard !isDiagnosticsPaused else { return }
+        await withCheckedContinuation { pausedDiagnosticsWaiters.append($0) }
+    }
+    func releasePausedDiagnostics() {
+        let waiters = diagnosticsPauseWaiters
+        diagnosticsPauseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 
     func finish() {
         continuation?.finish()
+        thermalContinuation?.finish()
         continuation = nil
     }
 }

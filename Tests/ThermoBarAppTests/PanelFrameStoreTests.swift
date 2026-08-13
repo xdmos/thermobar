@@ -17,6 +17,18 @@ struct PanelFrameStoreTests {
         #expect(PanelFrameStore.restore(saved: saved, screens: [primary]) == CGRect(x: 100, y: 120, width: 238, height: 330))
     }
 
+    @Test func launchRestoreUsesTheCurrentContentSizeInsteadOfAStoredLegacySize() {
+        let saved = PanelFrameRecord(displayIdentifier: 1, x: 100, y: 500, width: 238, height: 330)
+
+        #expect(
+            PanelFrameStore.restore(
+                saved: saved,
+                currentSize: CGSize(width: 238, height: 470),
+                screens: [primary]
+            ) == CGRect(x: 100, y: 418, width: 238, height: 470)
+        )
+    }
+
     @Test func matchingDisplayIdentifierPreservesOriginOnlyWithAMeaningfulIntersection() {
         let right = PanelFrameStore.Screen(
             displayIdentifier: 2,
@@ -103,6 +115,31 @@ struct PanelFrameStoreTests {
         #expect(PanelFrameStore.restore(saved: .init(displayIdentifier: 1, x: .infinity, y: 0, width: 238, height: 330), screens: [primary]) == nil)
         #expect(PanelFrameStore.restore(saved: .init(displayIdentifier: 1, x: 0, y: 0, width: 0, height: 330), screens: [primary]) == nil)
         #expect(PanelFrameStore.restore(saved: .init(displayIdentifier: 1, x: 0, y: .nan, width: 238, height: 330), screens: [primary]) == nil)
+    }
+
+    @Test func contentFrameCoalescerSchedulesExactlyOneCurrentNextTurnClamp() {
+        var coalescer = PanelContentFrameCoalescer()
+        let first = coalescer.noteChange()
+        let duplicate = coalescer.noteChange()
+        let current = coalescer.consumeIfCurrent(true)
+        let empty = coalescer.consumeIfCurrent(true)
+        let next = coalescer.noteChange()
+        let stale = coalescer.consumeIfCurrent(false)
+        #expect(first)
+        #expect(!duplicate)
+        #expect(current)
+        #expect(!empty)
+        #expect(next)
+        #expect(!stale)
+        #expect(!coalescer.isScheduled)
+    }
+
+    @Test func currentFrameClampNeverUsesPersistedLaunchGeometry() {
+        let persisted = PanelFrameRecord(displayIdentifier: 1, x: 25, y: 25, width: 238, height: 330)
+        let current = CGRect(x: -2_000, y: 100, width: 238, height: 550)
+        let disconnected = PanelFrameStore.Screen(displayIdentifier: 2, visibleFrame: CGRect(x: -1_280, y: 0, width: 1_280, height: 800))
+        #expect(PanelFrameStore.restore(saved: persisted, screens: [disconnected]) != PanelFrameStore.clamp(current, screens: [disconnected]))
+        #expect(PanelFrameStore.clamp(current, screens: [disconnected]) == CGRect(x: -1_268, y: 100, width: 238, height: 550))
     }
 
     @Test @MainActor func bridgeRestoresExistingDelegatesWhenItMovesOrDismantles() {

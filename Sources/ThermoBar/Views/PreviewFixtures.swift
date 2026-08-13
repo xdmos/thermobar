@@ -2,6 +2,25 @@ import ThermoBarCore
 
 enum PreviewFixtures {
     static let nowNanoseconds: UInt64 = 1_000_000_000_000
+    static let resourceConsumers = ResourceConsumerMetric(
+        cpu: .available([
+            .init(pid: 1, name: "Preview Browser with a deliberately long process name", percent: 137),
+            .init(pid: 2, name: "Preview Browser with a deliberately long process name", percent: 84),
+            .init(pid: 3, name: "WindowServer", percent: 22)
+        ]),
+        memory: .available([
+            .init(pid: 1, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 1_800 * 1_024 * 1_024),
+            .init(pid: 2, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 620 * 1_024 * 1_024),
+            .init(pid: 3, name: "WindowServer", physicalFootprintBytes: 410 * 1_024 * 1_024)
+        ])
+    )
+
+    static let measuringConsumers = ResourceConsumerMetric(
+        cpu: .measuring,
+        memory: .available([.init(pid: 1, name: "Preview Browser", physicalFootprintBytes: 620 * 1_024 * 1_024)])
+    )
+
+    static let unavailableConsumers = ResourceConsumerMetric(cpu: .unavailable, memory: .unavailable)
 
     static let nominal = snapshot(
         timestamp: nowNanoseconds - 1_000_000_000,
@@ -18,7 +37,8 @@ enum PreviewFixtures {
         fan: .available(fastestRPM: 2_500, fastestMaximumRPM: 7_900, validatedFanCount: 2),
         thermalLevel: .nominal,
         publicError: nil,
-        privateError: nil
+        privateError: nil,
+        resourceConsumers: resourceConsumers
     )
 
     static let serious = snapshot(
@@ -36,7 +56,8 @@ enum PreviewFixtures {
         fan: .available(fastestRPM: 5_840, fastestMaximumRPM: 7_900, validatedFanCount: 2),
         thermalLevel: .serious,
         publicError: nil,
-        privateError: nil
+        privateError: nil,
+        resourceConsumers: resourceConsumers
     )
 
     static let stale = snapshot(
@@ -54,7 +75,8 @@ enum PreviewFixtures {
         fan: .available(fastestRPM: 3_120, fastestMaximumRPM: 7_900, validatedFanCount: 2),
         thermalLevel: .fair,
         publicError: nil,
-        privateError: nil
+        privateError: nil,
+        resourceConsumers: resourceConsumers
     )
 
     static let unsupportedSchema = snapshot(
@@ -72,7 +94,8 @@ enum PreviewFixtures {
         fan: .unavailable(.unsupportedPrivateMetricSchema),
         thermalLevel: .nominal,
         publicError: nil,
-        privateError: .unsupportedPrivateMetricSchema
+        privateError: .unsupportedPrivateMetricSchema,
+        resourceConsumers: resourceConsumers
     )
 
     static let partialSensorFailure = snapshot(
@@ -90,7 +113,24 @@ enum PreviewFixtures {
         fan: .available(fastestRPM: 2_780, fastestMaximumRPM: 7_900, validatedFanCount: 2),
         thermalLevel: .fair,
         publicError: nil,
-        privateError: .missingExpectedKey("Tp0m")
+        privateError: .missingExpectedKey("Tp0m"),
+        resourceConsumers: resourceConsumers
+    )
+
+    static let measuring = snapshot(
+        timestamp: nowNanoseconds - 1_000_000_000, cpuPercent: 26.4,
+        memory: .init(usedBytes: 12_884_901_888, totalBytes: 25_769_803_776), gpuPercent: 18.7,
+        temperature: .init(cpuAverageCelsius: 49.6, gpuAverageCelsius: 46.4, chipHotspotCelsius: 53.8, cpuError: nil, gpuError: nil),
+        fan: .available(fastestRPM: 2_500, fastestMaximumRPM: 7_900, validatedFanCount: 2), thermalLevel: .nominal,
+        publicError: nil, privateError: nil, resourceConsumers: measuringConsumers
+    )
+
+    static let unavailable = snapshot(
+        timestamp: nowNanoseconds - 1_000_000_000, cpuPercent: 26.4,
+        memory: .init(usedBytes: 12_884_901_888, totalBytes: 25_769_803_776), gpuPercent: 18.7,
+        temperature: .init(cpuAverageCelsius: 49.6, gpuAverageCelsius: 46.4, chipHotspotCelsius: 53.8, cpuError: nil, gpuError: nil),
+        fan: .available(fastestRPM: 2_500, fastestMaximumRPM: 7_900, validatedFanCount: 2), thermalLevel: .nominal,
+        publicError: nil, privateError: nil, resourceConsumers: unavailableConsumers
     )
 
     private static func snapshot(
@@ -102,7 +142,8 @@ enum PreviewFixtures {
         fan: FanMetric,
         thermalLevel: ThermalLevel,
         publicError: MetricError?,
-        privateError: MetricError?
+        privateError: MetricError?,
+        resourceConsumers: ResourceConsumerMetric = .inactive
     ) -> SystemSnapshot {
         SystemSnapshot(
             monotonicNanoseconds: timestamp,
@@ -113,7 +154,8 @@ enum PreviewFixtures {
             fan: fan,
             thermalLevel: thermalLevel,
             publicMetricError: publicError,
-            privateMetricError: privateError
+            privateMetricError: privateError,
+            resourceConsumers: resourceConsumers
         )
     }
 }

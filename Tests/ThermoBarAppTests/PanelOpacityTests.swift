@@ -114,13 +114,16 @@ private actor OpacityCountingSampler: SamplingControlling {
     private(set) var snapshotRequests = 0
     private(set) var setModeRequests = 0
 
-    func snapshots() -> AsyncStream<SystemSnapshot> {
+    func snapshots() -> AsyncStream<SamplingSnapshot> {
         snapshotRequests += 1
         return AsyncStream { $0.finish() }
     }
 
-    func setMode(_ mode: SamplingMode) async {
+    func thermalSamples() -> AsyncStream<ThermalSample> { AsyncStream { $0.finish() } }
+
+    func setMode(_ mode: SamplingMode, transitionID: UUID) async -> SamplingTransitionReceipt {
         setModeRequests += 1
+        return .init(requestedTransitionID: transitionID, currentTransitionID: transitionID, currentMode: mode, isCurrent: true)
     }
 
     func currentDiagnostics() async -> [SamplingDiagnostic] {

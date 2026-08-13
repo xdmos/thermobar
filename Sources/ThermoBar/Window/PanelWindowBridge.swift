@@ -1,6 +1,26 @@
 import AppKit
 import SwiftUI
 
+/// Keeps notification bursts from repeatedly re-clamping a panel while SwiftUI is
+/// settling its content size. It is intentionally value-only so the coalescing
+/// contract is testable without an AppKit run loop.
+struct PanelContentFrameCoalescer {
+    private(set) var isScheduled = false
+
+    mutating func noteChange() -> Bool {
+        guard !isScheduled else { return false }
+        isScheduled = true
+        return true
+    }
+
+    mutating func consumeIfCurrent(_ isCurrent: Bool) -> Bool {
+        defer { isScheduled = false }
+        return isCurrent && isScheduled
+    }
+
+    mutating func cancel() { isScheduled = false }
+}
+
 struct PanelWindowBridge: NSViewRepresentable {
     let store: PanelFrameStore
     let panelOpacity: Double
@@ -44,6 +64,11 @@ struct PanelWindowBridge: NSViewRepresentable {
         private var isObservingScreenParameters = false
         private weak var activeView: NSView?
         private var installationGeneration: UInt64 = 0
+        private weak var observedContentView: NSView?
+        private var originalPostsFrameChangedNotifications: Bool?
+        private var contentFrameObserver: NSObjectProtocol?
+        private var lastContentSize: CGSize?
+        private var contentFrameCoalescer = PanelContentFrameCoalescer()
 
         init(store: PanelFrameStore, panelOpacity: Double = 1.00) {
             self.store = store
@@ -105,15 +130,17 @@ struct PanelWindowBridge: NSViewRepresentable {
             window.isMovableByWindowBackground = true
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             startObservingScreenParameters()
+            observeContentFrame(of: window)
 
             guard !hasRestoredFrame else { return }
             hasRestoredFrame = true
-            applyProgrammaticFrame(store.restoreFrame())
+            applyProgrammaticFrame(store.restoreFrame(currentSize: window.frame.size))
         }
 
         func uninstall() {
             guard let window else {
                 stopObservingScreenParameters()
+                stopObservingContentFrame()
                 forwardedDelegate = nil
                 return
             }
@@ -127,6 +154,7 @@ struct PanelWindowBridge: NSViewRepresentable {
             isApplyingProgrammaticFrame = false
             isUserMoveActive = false
             stopObservingScreenParameters()
+            stopObservingContentFrame()
         }
 
         func windowWillMove(_ notification: Notification) {
@@ -152,6 +180,35 @@ struct PanelWindowBridge: NSViewRepresentable {
                 return .init(displayIdentifier: identifier, visibleFrame: screen.visibleFrame)
             })
             applyProgrammaticFrame(frame)
+        }
+
+        private func observeContentFrame(of window: NSWindow) {
+            guard observedContentView !== window.contentView else { return }
+            stopObservingContentFrame()
+            guard let content = window.contentView else { return }
+            observedContentView = content; lastContentSize = content.frame.size
+            originalPostsFrameChangedNotifications = content.postsFrameChangedNotifications
+            content.postsFrameChangedNotifications = true
+            contentFrameObserver = NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: content, queue: .main) { [weak self, weak content] _ in
+                guard let self, let content else { return }
+                Task { @MainActor in self.contentFrameChanged(content) }
+            }
+        }
+        private func contentFrameChanged(_ content: NSView) {
+            guard observedContentView === content, content.frame.size != lastContentSize else { return }
+            lastContentSize = content.frame.size
+            guard contentFrameCoalescer.noteChange() else { return }
+            let generation = installationGeneration
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.contentFrameCoalescer.consumeIfCurrent(self.installationGeneration == generation) else { return }
+                self.screenParametersChanged(Notification(name: NSApplication.didChangeScreenParametersNotification))
+            }
+        }
+        private func stopObservingContentFrame() {
+            if let contentFrameObserver { NotificationCenter.default.removeObserver(contentFrameObserver) }
+            contentFrameObserver = nil
+            if let content = observedContentView, let originalPostsFrameChangedNotifications { content.postsFrameChangedNotifications = originalPostsFrameChangedNotifications }
+            observedContentView = nil; originalPostsFrameChangedNotifications = nil; lastContentSize = nil; contentFrameCoalescer.cancel()
         }
 
         override func responds(to selector: Selector!) -> Bool {

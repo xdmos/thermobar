@@ -85,6 +85,7 @@ public struct SystemSnapshot: Equatable, Sendable {
     public let thermalLevel: ThermalLevel
     public let publicMetricError: MetricError?
     public let privateMetricError: MetricError?
+    public let resourceConsumers: ResourceConsumerMetric
 
     public init(
         monotonicNanoseconds: UInt64,
@@ -95,7 +96,8 @@ public struct SystemSnapshot: Equatable, Sendable {
         fan: FanMetric,
         thermalLevel: ThermalLevel,
         publicMetricError: MetricError?,
-        privateMetricError: MetricError?
+        privateMetricError: MetricError?,
+        resourceConsumers: ResourceConsumerMetric = .inactive
     ) {
         self.monotonicNanoseconds = monotonicNanoseconds
         self.cpuPercent = cpuPercent
@@ -106,5 +108,10 @@ public struct SystemSnapshot: Equatable, Sendable {
         self.thermalLevel = thermalLevel
         self.publicMetricError = publicMetricError
         self.privateMetricError = privateMetricError
+        self.resourceConsumers = resourceConsumers
+    }
+
+    public func replacing(resourceConsumers: ResourceConsumerMetric) -> Self {
+        .init(monotonicNanoseconds: monotonicNanoseconds, cpuPercent: cpuPercent, memory: memory, gpuPercent: gpuPercent, temperature: temperature, fan: fan, thermalLevel: thermalLevel, publicMetricError: publicMetricError, privateMetricError: privateMetricError, resourceConsumers: resourceConsumers)
     }
 }
