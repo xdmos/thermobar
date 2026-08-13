@@ -38,7 +38,7 @@ struct ThermoBarApp: App {
         .windowLevel(.floating)
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        .defaultSize(width: 238, height: 330)
+        .defaultSize(width: FloatingPanelLayout.width, height: 330)
         .defaultLaunchBehavior(model.panelVisible ? .presented : .suppressed)
 
         Settings {

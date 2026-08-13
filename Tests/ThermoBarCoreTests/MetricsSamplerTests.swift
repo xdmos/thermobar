@@ -82,7 +82,7 @@ import Testing
     #expect(c.snapshot.closed == 1)
 
     c.setFanError(nil)
-    await c.waitForWaiter(); c.fire(); await c.waitForReads(2)
+    await c.waitForWaiter(); c.fire(); await c.waitForReads(2); await c.waitForWaiter()
     #expect((await sampler.latestSnapshot)?.fan.fastestRPM == 2_500)
     #expect(!(await sampler.currentDiagnostics()).contains { $0.source == .smcConnection })
 }
@@ -120,7 +120,7 @@ import Testing
     let second = Task { await sampler.setMode(.menuBarOnly); c.markCompletion() }
     await c.waitForJoinedTransition()
     #expect(!c.snapshot.didComplete)
-    c.releaseCancelled(); await first.value; await second.value; await c.waitForWaiter()
+    c.releaseCancelled(); _ = await first.value; _ = await second.value; await c.waitForWaiter()
     #expect(await sampler.mode == .menuBarOnly); #expect(c.snapshot.reads == 2); #expect(c.snapshot.waiters == 1)
 }
 
@@ -130,7 +130,7 @@ import Testing
     let menu = Task { await sampler.setMode(.menuBarOnly) }
     await c.waitForCancelled(1)
     let sleeping = Task { await sampler.setMode(.sleeping) }
-    c.releaseCancelled(); await menu.value; await sleeping.value
+    c.releaseCancelled(); _ = await menu.value; _ = await sleeping.value
     #expect(await sampler.mode == .sleeping); #expect(c.snapshot.reads == 1); #expect(c.snapshot.waiters == 0); #expect(c.snapshot.closed == 1)
 }
 
@@ -140,7 +140,7 @@ import Testing
     let menu = Task { await sampler.setMode(.menuBarOnly) }
     await c.waitForCancelled(1)
     let visible = Task { await sampler.setMode(.visible) }
-    c.releaseCancelled(); await menu.value; await visible.value; await c.waitForWaiter()
+    c.releaseCancelled(); _ = await menu.value; _ = await visible.value; await c.waitForWaiter()
     #expect(await sampler.mode == .visible); #expect(c.snapshot.reads == 2); #expect(c.snapshot.waiters == 1)
 }
 
@@ -151,7 +151,7 @@ import Testing
     await c.waitForCancelled(1)
     let joined = Task { await sampler.setMode(.menuBarOnly); c.markCompletion() }
     await c.waitForJoinedTransition(); winning.cancel(); #expect(!c.snapshot.didComplete)
-    c.releaseCancelled(); await winning.value; await joined.value; await c.waitForWaiter()
+    c.releaseCancelled(); _ = await winning.value; await joined.value; await c.waitForWaiter()
     #expect(c.snapshot.reads == 2); #expect(c.snapshot.waiters == 1); #expect(await sampler.mode == .menuBarOnly)
 }
 
@@ -203,15 +203,102 @@ import Testing
     #expect(await probe.values.count == 2)
 }
 
+@Test func cadenceSnapshotsKeepTheirModeTransitionIdentity() async {
+    let c = SamplerControl(); let sampler = MetricsSampler(dependencies: c.dependencies)
+    let stream = await sampler.snapshots(); let id = UUID()
+    let reader = Task { var iterator = stream.makeAsyncIterator(); return [await iterator.next(), await iterator.next()] }
+    let receipt = await sampler.setMode(.visible, transitionID: id)
+    await c.waitForWaiter(); c.fire()
+    let values = await reader.value.compactMap { $0 }
+    #expect(receipt.currentTransitionID == id)
+    #expect(values.map(\.transitionID) == [id, id])
+}
+
+@Test func consumerReadsOnlyOncePerVisibleSampleAndResetsAcrossHiddenModes() async {
+    let c = SamplerControl(); let sampler = MetricsSampler(dependencies: c.dependencies)
+    await sampler.setMode(.visible)
+    #expect(c.snapshot.consumerReads == 1)
+    let first = await sampler.latestSnapshot?.resourceConsumers
+    #expect(first?.cpu == .measuring)
+    guard case .available = first?.memory else { Issue.record("memory must be available on the first valid read"); return }
+
+    await c.waitForWaiter(); c.fire(); await c.waitForReads(2); await c.waitForWaiter()
+    #expect(c.snapshot.consumerReads == 2)
+    guard case .available = (await sampler.latestSnapshot)?.resourceConsumers.cpu else { Issue.record("second interval must calculate CPU"); return }
+
+    await sampler.setMode(.menuBarOnly)
+    #expect(c.snapshot.consumerReads == 2)
+    await sampler.setMode(.sleeping)
+    #expect(c.snapshot.consumerReads == 2)
+    #expect((await sampler.latestSnapshot)?.resourceConsumers == .inactive)
+
+    await sampler.setMode(.visible)
+    #expect(c.snapshot.consumerReads == 3)
+    #expect((await sampler.latestSnapshot)?.resourceConsumers.cpu == .measuring)
+}
+
+@Test func thermalStreamReplacementFinishesOldConsumer() async {
+    let c = SamplerControl(); let sampler = MetricsSampler(dependencies: c.dependencies)
+    let old = await sampler.thermalSamples()
+    let task = Task { var iterator = old.makeAsyncIterator(); return await iterator.next() }
+    _ = await sampler.thermalSamples()
+    #expect(await task.value == nil)
+}
+
+@Test func thermalStreamKeepsEveryRealSampleInFIFOOrderAndSleepAddsNone() async {
+    let c = SamplerControl(); let sampler = MetricsSampler(dependencies: c.dependencies)
+    let stream = await sampler.thermalSamples()
+    let reader = Task { () -> [ThermalSample?] in
+        var iterator = stream.makeAsyncIterator()
+        return [await iterator.next(), await iterator.next()]
+    }
+    await sampler.setMode(.visible)
+    await c.waitForWaiter(); c.fire(); await c.waitForWaiter()
+    let samples = await reader.value.compactMap { $0 }
+    #expect(samples.map(\.monotonicNanoseconds) == [1, 2])
+    await sampler.setMode(.sleeping)
+    // The two samples above are the immediate and cadence reads. Sleep publishes
+    // only a redacted snapshot, never a synthetic thermal sample.
+    #expect(samples.count == 2)
+}
+
+@Test func sameModeReceiptRetainsExistingTransitionIdentity() async {
+    let c = SamplerControl(); let sampler = MetricsSampler(dependencies: c.dependencies)
+    let firstID = UUID(); let secondID = UUID()
+    let first = await sampler.setMode(.visible, transitionID: firstID)
+    let second = await sampler.setMode(.visible, transitionID: secondID)
+    #expect(first.currentTransitionID == firstID)
+    #expect(second.currentTransitionID == firstID)
+    #expect(second.isCurrent == false)
+}
+
+@Test func supersededReceiptReportsTheWinningStableModeIdentity() async {
+    let c = SamplerControl(); let sampler = MetricsSampler(dependencies: c.dependencies)
+    await sampler.setMode(.visible); await c.waitForWaiter(); c.setPauseCancellation(true)
+    let firstID = UUID(); let secondID = UUID()
+    let first = Task { await sampler.setMode(.menuBarOnly, transitionID: firstID) }
+    await c.waitForCancelled(1)
+    let second = Task { await sampler.setMode(.visible, transitionID: secondID) }
+    c.releaseCancelled()
+    let firstReceipt = await first.value
+    let secondReceipt = await second.value
+    #expect(firstReceipt.currentTransitionID == secondID)
+    #expect(firstReceipt.currentMode == .visible)
+    #expect(!firstReceipt.isCurrent)
+    #expect(secondReceipt.currentTransitionID == secondID)
+    #expect(secondReceipt.isCurrent)
+}
+
 private actor StreamProbe {
     private(set) var values: [SystemSnapshot] = []
     private var waiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
     func record(_ value: SystemSnapshot?) { guard let value else { return }; values.append(value); let continuations = waiters.removeValue(forKey: values.count) ?? []; continuations.forEach { $0.resume() } }
+    func record(_ value: SamplingSnapshot?) { record(value?.value) }
     func waitForValues(_ count: Int) async { guard values.count < count else { return }; await withCheckedContinuation { waiters[count, default: []].append($0) } }
 }
 
 private final class SamplerControl: @unchecked Sendable {
-    struct Snapshot: Sendable { let reads, waiters, closed, cancelled, privateCalls: Int; let didComplete: Bool }
+    struct Snapshot: Sendable { let reads, waiters, closed, cancelled, privateCalls, consumerReads: Int; let didComplete: Bool }
     private struct State {
         var sleepers: [UUID: CheckedContinuation<Void, Never>] = [:]
         var cancelledIDs: Set<UUID> = []
@@ -222,7 +309,7 @@ private final class SamplerControl: @unchecked Sendable {
         var streamTerminations = 0
         var cancellationObservers: [CheckedContinuation<Void, Never>] = []
         var readObservers: [Int: [CheckedContinuation<Void, Never>]] = [:]
-        var reads = 0; var closed = 0; var cancelled = 0; var joins = 0; var privateCalls = 0
+        var reads = 0; var closed = 0; var cancelled = 0; var joins = 0; var privateCalls = 0; var consumerReads = 0
         var openFails = false; var memoryFails = false; var gpuFails = false
         var cpuTemperatureError: MetricError?; var gpuTemperatureError: MetricError?; var fanError: MetricError?
         var pauseCancellation = false; var completion = false
@@ -233,14 +320,18 @@ private final class SamplerControl: @unchecked Sendable {
     init(memoryFails: Bool = false, gpuFails: Bool = false, schema: PrivateMetricSchema? = PrivateMetricSchemaRegistry.schema(model: "Mac17,9", build: "26A5388g")) { self.schema = schema; withState { $0.memoryFails = memoryFails; $0.gpuFails = gpuFails } }
     private func withState<T>(_ body: (inout State) -> T) -> T { lock.lock(); defer { lock.unlock() }; return body(&state) }
     private func readState<T>(_ body: (State) -> T) -> T { lock.lock(); defer { lock.unlock() }; return body(state) }
-    var snapshot: Snapshot { readState { Snapshot(reads: $0.reads, waiters: $0.sleepers.count, closed: $0.closed, cancelled: $0.cancelled, privateCalls: $0.privateCalls, didComplete: $0.completion) } }
+    var snapshot: Snapshot { readState { Snapshot(reads: $0.reads, waiters: $0.sleepers.count, closed: $0.closed, cancelled: $0.cancelled, privateCalls: $0.privateCalls, consumerReads: $0.consumerReads, didComplete: $0.completion) } }
     func setGPUFails(_ value: Bool) { withState { $0.gpuFails = value } }
     func setOpenFails(_ value: Bool) { withState { $0.openFails = value } }
     func setPauseCancellation(_ value: Bool) { withState { $0.pauseCancellation = value } }
     func setTemperatureErrors(cpu: MetricError?, gpu: MetricError?) { withState { $0.cpuTemperatureError = cpu; $0.gpuTemperatureError = gpu } }
     func setFanError(_ value: MetricError?) { withState { $0.fanError = value } }
-    var dependencies: MetricsSampler.Dependencies { MetricsSampler.Dependencies(schema: { self.schema }, cpuTicks: { self.ticks() }, memory: { self.readState { $0.memoryFails ? nil : MemoryMetric(usedBytes: 1, totalBytes: 2) } }, gpu: { self.gpu() }, thermal: { .nominal }, smc: { if self.readState({ $0.openFails }) { throw SMCError.open }; return FakeSMC(control: self) }, temperatures: { _, _ in self.temperature() }, fans: { _, _ in self.fan() }, clock: { UInt64(self.snapshot.reads) }, sleeper: FakeSleeper(control: self), transitionWaiterRegistered: { self.transitionJoin() }, streamTerminationObserved: { self.streamTermination() }) }
+    var dependencies: MetricsSampler.Dependencies { MetricsSampler.Dependencies(schema: { self.schema }, cpuTicks: { self.ticks() }, memory: { self.readState { $0.memoryFails ? nil : MemoryMetric(usedBytes: 1, totalBytes: 2) } }, gpu: { self.gpu() }, thermal: { .nominal }, smc: { if self.readState({ $0.openFails }) { throw SMCError.open }; return FakeSMC(control: self) }, temperatures: { _, _ in self.temperature() }, fans: { _, _ in self.fan() }, clock: { UInt64(self.snapshot.reads) }, sleeper: FakeSleeper(control: self), consumerUsage: { self.consumerUsage() }, transitionWaiterRegistered: { self.transitionJoin() }, streamTerminationObserved: { self.streamTermination() }) }
     func ticks() -> [CPUTicks] { let result: (Int, [CheckedContinuation<Void, Never>]) = withState { state in state.reads += 1; let waiters = state.readObservers.removeValue(forKey: state.reads) ?? []; return (state.reads, waiters) }; result.1.forEach { $0.resume() }; return [CPUTicks(user: UInt64(result.0 * 10), system: 0, nice: 0, idle: UInt64(result.0 * 10))] }
+    func consumerUsage() -> ConsumerUsageReading? {
+        let count = withState { state -> Int in state.consumerReads += 1; return state.consumerReads }
+        return .init(monotonicNanoseconds: UInt64(count * 100), records: [.init(pid: 42, startTime: 9, groupID: "pid:42:9", name: "Consumer", cumulativeCPUTimeNanoseconds: UInt64(count * 100), physicalFootprintBytes: 1_024)])
+    }
     func gpu() -> Double? { withState { state in state.privateCalls += 1; return state.gpuFails ? nil : 25 } }
     func temperature() -> TemperatureMetric { let errors = readState { ($0.cpuTemperatureError, $0.gpuTemperatureError) }; return TemperatureMetric(cpuAverageCelsius: errors.0 == nil ? 50 : nil, gpuAverageCelsius: errors.1 == nil ? 45 : nil, chipHotspotCelsius: errors.0 == nil && errors.1 == nil ? 50 : nil, cpuError: errors.0, gpuError: errors.1) }
     func fan() -> FanMetric { readState { state in state.fanError.map(FanMetric.unavailable) ?? .available(fastestRPM: 2_500, fastestMaximumRPM: 7_900, validatedFanCount: 2) } }

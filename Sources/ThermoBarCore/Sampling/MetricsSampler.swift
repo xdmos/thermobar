@@ -34,11 +34,12 @@ public actor MetricsSampler {
         let temperatures: @Sendable (PrivateMetricSchema, any SMCReading) -> TemperatureMetric
         let fans: @Sendable (PrivateMetricSchema, any SMCReading) -> FanMetric
         let clock: @Sendable () -> UInt64
+        let consumerUsage: @Sendable () -> ConsumerUsageReading?
         let sleeper: any SamplingSleeper
         let transitionWaiterRegistered: @Sendable () -> Void
         let streamTerminationObserved: @Sendable () -> Void
-        init(schema: @escaping @Sendable () -> PrivateMetricSchema?, cpuTicks: @escaping @Sendable () -> [CPUTicks]?, memory: @escaping @Sendable () -> MemoryMetric?, gpu: @escaping @Sendable () -> Double?, thermal: @escaping @Sendable () -> ThermalLevel, smc: @escaping @Sendable () throws -> any SMCReading, temperatures: @escaping @Sendable (PrivateMetricSchema, any SMCReading) -> TemperatureMetric, fans: @escaping @Sendable (PrivateMetricSchema, any SMCReading) -> FanMetric, clock: @escaping @Sendable () -> UInt64, sleeper: any SamplingSleeper, transitionWaiterRegistered: @escaping @Sendable () -> Void = {}, streamTerminationObserved: @escaping @Sendable () -> Void = {}) {
-            self.schema = schema; self.cpuTicks = cpuTicks; self.memory = memory; self.gpu = gpu; self.thermal = thermal; self.smc = smc; self.temperatures = temperatures; self.fans = fans; self.clock = clock; self.sleeper = sleeper; self.transitionWaiterRegistered = transitionWaiterRegistered; self.streamTerminationObserved = streamTerminationObserved
+        init(schema: @escaping @Sendable () -> PrivateMetricSchema?, cpuTicks: @escaping @Sendable () -> [CPUTicks]?, memory: @escaping @Sendable () -> MemoryMetric?, gpu: @escaping @Sendable () -> Double?, thermal: @escaping @Sendable () -> ThermalLevel, smc: @escaping @Sendable () throws -> any SMCReading, temperatures: @escaping @Sendable (PrivateMetricSchema, any SMCReading) -> TemperatureMetric, fans: @escaping @Sendable (PrivateMetricSchema, any SMCReading) -> FanMetric, clock: @escaping @Sendable () -> UInt64, sleeper: any SamplingSleeper, consumerUsage: @escaping @Sendable () -> ConsumerUsageReading? = { nil }, transitionWaiterRegistered: @escaping @Sendable () -> Void = {}, streamTerminationObserved: @escaping @Sendable () -> Void = {}) {
+            self.schema = schema; self.cpuTicks = cpuTicks; self.memory = memory; self.gpu = gpu; self.thermal = thermal; self.smc = smc; self.temperatures = temperatures; self.fans = fans; self.clock = clock; self.sleeper = sleeper; self.consumerUsage = consumerUsage; self.transitionWaiterRegistered = transitionWaiterRegistered; self.streamTerminationObserved = streamTerminationObserved
         }
     }
     private struct FailureState { let count: Int; let error: MetricError }
@@ -47,38 +48,61 @@ public actor MetricsSampler {
     public private(set) var latestSnapshot: SystemSnapshot?
     private var loop: Task<Void, Never>?
     private var activeTransitionID: UUID?
+    private var currentModeTransitionID = UUID()
     private var transitionWaiters: [CheckedContinuation<Void, Never>] = []
     private var cpuCalculator = CPUUsageCalculator()
+    private var consumerCalculator = ResourceConsumerCalculator()
     private var smc: (any SMCReading)?
     private var failures: [SamplingSource: FailureState] = [:]
-    private var continuation: AsyncStream<SystemSnapshot>.Continuation?
+    private var continuation: AsyncStream<SamplingSnapshot>.Continuation?
+    private var thermalContinuation: AsyncStream<ThermalSample>.Continuation?
     private var streamID: UUID?
+    private var thermalStreamID: UUID?
 
     public init(model: String, build: String) {
         let schema = PrivateMetricSchemaRegistry.schema(model: model, build: build)
-        dependencies = Dependencies(schema: { schema }, cpuTicks: { CPUUsageReader().readTicks() }, memory: { MemoryUsageReader().read() }, gpu: { guard let schema else { return nil }; return GPUUsageReader(schema: schema).read() }, thermal: { ThermalStateReader().read() }, smc: { try SMCClient() }, temperatures: { TemperatureReader(schema: $0, reader: $1).read() }, fans: { FanReader(schema: $0, reader: $1).read() }, clock: { MonotonicClock.nowNanoseconds() }, sleeper: ContinuousSamplingSleeper())
+        dependencies = Dependencies(schema: { schema }, cpuTicks: { CPUUsageReader().readTicks() }, memory: { MemoryUsageReader().read() }, gpu: { guard let schema else { return nil }; return GPUUsageReader(schema: schema).read() }, thermal: { ThermalStateReader().read() }, smc: { try SMCClient() }, temperatures: { TemperatureReader(schema: $0, reader: $1).read() }, fans: { FanReader(schema: $0, reader: $1).read() }, clock: { MonotonicClock.nowNanoseconds() }, sleeper: ContinuousSamplingSleeper(), consumerUsage: { ResourceConsumerReader().read() })
     }
     init(dependencies: Dependencies) { self.dependencies = dependencies }
 
-    public func snapshots() -> AsyncStream<SystemSnapshot> {
+    public func snapshots() -> AsyncStream<SamplingSnapshot> {
         continuation?.finish(); let id = UUID(); streamID = id
-        return AsyncStream { continuation in
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             self.continuation = continuation
             continuation.onTermination = { @Sendable [weak self] _ in Task { await self?.clearContinuation(id: id) } }
+        }
+    }
+    public func thermalSamples() -> AsyncStream<ThermalSample> {
+        thermalContinuation?.finish(); let id = UUID(); thermalStreamID = id
+        return AsyncStream { continuation in
+            self.thermalContinuation = continuation
+            continuation.onTermination = { @Sendable [weak self] _ in Task { await self?.clearThermalContinuation(id: id) } }
         }
     }
     public func currentDiagnostics() -> [SamplingDiagnostic] {
         SamplingSource.allCases.compactMap { source in failures[source].map { SamplingDiagnostic(source: source, error: $0.error, consecutiveFailures: $0.count) } }
     }
-    public func setMode(_ newMode: SamplingMode) async {
+    public func setMode(_ newMode: SamplingMode) async { _ = await setMode(newMode, transitionID: UUID()) }
+    public func setMode(_ newMode: SamplingMode, transitionID requestedID: UUID) async -> SamplingTransitionReceipt {
         if newMode == mode {
             await waitForTransition()
-            return
+            return receipt(requestedID)
         }
         // Publish intent before suspension. Concurrent equal requests are then idempotent.
         mode = newMode
-        let transitionID = UUID()
+        let transitionID = requestedID
         activeTransitionID = transitionID
+        currentModeTransitionID = transitionID
+        // Sleep intent must erase consumer identities before awaiting retirement of a
+        // previously active loop. The newest stream slot replaces any older value.
+        if newMode == .sleeping {
+            _ = consumerCalculator.reset()
+            if let latestSnapshot {
+                let redacted = latestSnapshot.replacing(resourceConsumers: .inactive)
+                self.latestSnapshot = redacted
+                continuation?.yield(.init(value: redacted, transitionID: transitionID))
+            }
+        }
         // Keep the retiring loop installed until it has exited, so every newer transition
         // cancels and awaits the same task rather than accidentally creating a second cadence.
         let old = loop
@@ -86,15 +110,16 @@ public actor MetricsSampler {
         await old?.value
         guard activeTransitionID == transitionID else {
             await waitForTransition()
-            return
+            return receipt(requestedID)
         }
         loop = nil
         guard let interval = newMode.intervalNanoseconds else {
-            smc?.close(); smc = nil; cpuCalculator.reset(); completeTransition(transitionID); return
+            smc?.close(); smc = nil; cpuCalculator.reset(); _ = consumerCalculator.reset()
+            completeTransition(transitionID); return receipt(requestedID)
         }
         // Source reads are synchronous. Once this actor resumes, sample() cannot interleave with sleep.
         sample()
-        guard mode == newMode else { return }
+        guard mode == newMode else { return receipt(requestedID) }
         let sleeper = dependencies.sleeper
         loop = Task { [weak self, sleeper] in
             while !Task.isCancelled {
@@ -104,6 +129,7 @@ public actor MetricsSampler {
             }
         }
         completeTransition(transitionID)
+        return receipt(requestedID)
     }
     private func sampleCadence(expectedMode: SamplingMode) {
         guard mode == expectedMode else { return }
@@ -143,9 +169,14 @@ public actor MetricsSampler {
                 }
             } else { temperature = failedTemperature(); fan = failedFan(); privateError = .readFailed }
         } else { temperature = unsupportedTemperature(); fan = unsupportedFan(); privateError = .unsupportedPrivateMetricSchema }
-        let snapshot = SystemSnapshot(monotonicNanoseconds: dependencies.clock(), cpuPercent: cpu, memory: memory, gpuPercent: gpu, temperature: temperature, fan: fan, thermalLevel: thermal, publicMetricError: (ticks == nil || memory == nil) ? .readFailed : nil, privateMetricError: privateError)
+        let consumers: ResourceConsumerMetric
+        if mode == .visible { consumers = consumerCalculator.consume(dependencies.consumerUsage()) }
+        else { consumers = consumerCalculator.reset() }
+        let snapshot = SystemSnapshot(monotonicNanoseconds: dependencies.clock(), cpuPercent: cpu, memory: memory, gpuPercent: gpu, temperature: temperature, fan: fan, thermalLevel: thermal, publicMetricError: (ticks == nil || memory == nil) ? .readFailed : nil, privateMetricError: privateError, resourceConsumers: consumers)
         guard mode != .sleeping else { return }
-        latestSnapshot = snapshot; continuation?.yield(snapshot)
+        latestSnapshot = snapshot
+        continuation?.yield(.init(value: snapshot, transitionID: currentModeTransitionID))
+        thermalContinuation?.yield(.init(level: thermal, monotonicNanoseconds: snapshot.monotonicNanoseconds))
     }
     private func record(_ source: SamplingSource, error: MetricError?) {
         guard let error else { failures[source] = nil; return }
@@ -166,7 +197,9 @@ public actor MetricsSampler {
         transitionWaiters.removeAll()
         ready.forEach { $0.resume() }
     }
+    private func receipt(_ requested: UUID) -> SamplingTransitionReceipt { .init(requestedTransitionID: requested, currentTransitionID: currentModeTransitionID, currentMode: mode, isCurrent: currentModeTransitionID == requested) }
     private func clearContinuation(id: UUID) { dependencies.streamTerminationObserved(); guard streamID == id else { return }; continuation = nil; streamID = nil }
+    private func clearThermalContinuation(id: UUID) { guard thermalStreamID == id else { return }; thermalContinuation = nil; thermalStreamID = nil }
     private func validatedSchema(_ value: PrivateMetricSchema?) -> PrivateMetricSchema? { guard let value, PrivateMetricSchemaRegistry.schema(model: value.model, build: value.osBuild) == value else { return nil }; return value }
     private func emptyTemperature() -> TemperatureMetric { TemperatureMetric(cpuAverageCelsius: nil, gpuAverageCelsius: nil, chipHotspotCelsius: nil, cpuError: nil, gpuError: nil) }
     private func failedTemperature() -> TemperatureMetric { TemperatureMetric(cpuAverageCelsius: nil, gpuAverageCelsius: nil, chipHotspotCelsius: nil, cpuError: .readFailed, gpuError: .readFailed) }
@@ -176,6 +209,7 @@ public actor MetricsSampler {
     deinit {
         loop?.cancel()
         continuation?.finish()
+        thermalContinuation?.finish()
         smc?.close()
         transitionWaiters.forEach { $0.resume() }
     }

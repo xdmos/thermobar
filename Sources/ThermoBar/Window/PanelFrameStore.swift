@@ -24,6 +24,11 @@ final class PanelFrameStore {
         return Self.restore(saved: saved, screens: Self.screens(from: screens))
     }
 
+    func restoreFrame(currentSize: CGSize, screens: [NSScreen] = NSScreen.screens) -> CGRect? {
+        guard let saved = preferences.panelFrame else { return nil }
+        return Self.restore(saved: saved, currentSize: currentSize, screens: Self.screens(from: screens))
+    }
+
     func save(frame: CGRect, on screen: NSScreen?) {
         guard let screen, Self.isValid(frame) else { return }
         let identifier = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
@@ -38,8 +43,15 @@ final class PanelFrameStore {
     }
 
     nonisolated static func restore(saved: PanelFrameRecord, screens: [Screen]) -> CGRect? {
+        restore(saved: saved, currentSize: CGSize(width: saved.width, height: saved.height), screens: screens)
+    }
+
+    /// Restores the saved display and origin while allowing current SwiftUI
+    /// content to replace a stale persisted size from an older app version.
+    nonisolated static func restore(saved: PanelFrameRecord, currentSize: CGSize, screens: [Screen]) -> CGRect? {
         let savedFrame = CGRect(x: saved.x, y: saved.y, width: saved.width, height: saved.height)
-        guard isValid(savedFrame) else { return nil }
+        let currentFrame = CGRect(origin: savedFrame.origin, size: currentSize)
+        guard isValid(savedFrame), isValid(currentFrame) else { return nil }
 
         let validScreens = screens.filter { isValid($0.visibleFrame) }
         guard !validScreens.isEmpty else { return nil }
@@ -52,7 +64,7 @@ final class PanelFrameStore {
             target = targetScreen(for: savedFrame, screens: validScreens)
         }
 
-        return clamped(savedFrame, to: target.visibleFrame)
+        return clamped(currentFrame, to: target.visibleFrame)
     }
 
     /// Re-clamps a currently displayed window after a screen topology change.
