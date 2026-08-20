@@ -487,6 +487,7 @@ enum ThermoBarCopy {
     static let sourceCPUUtilization = resource("sensor.cpu-utilization")
     static let sourceMemory = resource("sensor.memory")
     static let consumerCPUTitle = resource("consumer.cpu-title")
+    static let consumerComputeTitle = resource("consumer.compute-title")
     static let consumerMemoryTitle = resource("consumer.memory-title")
     static let consumerMeasuring = resource("consumer.measuring")
     static let consumerUnavailable = resource("consumer.unavailable")

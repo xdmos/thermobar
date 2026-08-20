@@ -6,6 +6,20 @@ import Testing
     #expect(ResourceConsumerPresentation.cpu(237.4) == "237%")
 }
 
+@Test func resourceConsumerPresentationShowsGPUAndCPUWithoutInventingGPUData() {
+    #expect(ResourceConsumerPresentation.compute(cpu: 6, gpu: 82) == "GPU 82% · CPU 6%")
+    #expect(ResourceConsumerPresentation.compute(cpu: 6, gpu: nil) == "GPU — · CPU 6%")
+}
+
+@Test func resourceConsumerPresentationSeparatesGPUAndCPUForNarrowPanelRows() {
+    #expect(ResourceConsumerPresentation.computeDetails(cpu: 6, gpu: 82) == .init(gpu: "GPU 82%", cpu: "CPU 6%"))
+    #expect(ResourceConsumerPresentation.computeDetails(cpu: 6, gpu: nil) == .init(gpu: "GPU —", cpu: "CPU 6%"))
+}
+
+@Test func resourceConsumerPresentationKeepsRAMValueAsItsOwnDetailLine() {
+    #expect(ResourceConsumerPresentation.memoryDetail(6_833 * 1_024 * 1_024, locale: Locale(identifier: "en_US")) == "6.7 GB")
+}
+
 @Test func resourceConsumerPresentationUsesBinaryMemoryUnits() {
     #expect(ResourceConsumerPresentation.memory(620 * 1_024 * 1_024, locale: Locale(identifier: "en_US")) == "620 MB")
     #expect(ResourceConsumerPresentation.memory(1_800 * 1_024 * 1_024, locale: Locale(identifier: "pl_PL")).contains(","))

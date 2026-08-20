@@ -16,20 +16,42 @@ import Testing
     #expect(rows.map(\.pid) == [2, 1, 4]); #expect(rows[0].percent == 390)
 }
 
+@Test func calculatorRanksCombinedConsumersByGPUThenCPU() {
+    var calculator = ResourceConsumerCalculator()
+    _ = calculator.consume(.init(monotonicNanoseconds: 100, records: [
+        record(1, "CPU heavy", 10, 1, gpu: 100),
+        record(2, "Local model", 10, 1, gpu: 100),
+        record(3, "Neither", 10, 1, gpu: nil)
+    ]))
+
+    let result = calculator.consume(.init(monotonicNanoseconds: 200, records: [
+        record(1, "CPU heavy", 90, 1, gpu: 110),
+        record(2, "Local model", 30, 1, gpu: 180),
+        record(3, "Neither", 20, 1, gpu: nil)
+    ]))
+
+    guard case let .available(rows) = result.cpu else { Issue.record(); return }
+    #expect(rows == [
+        .init(pid: 2, name: "Local model", percent: 20, gpuPercent: 80),
+        .init(pid: 1, name: "CPU heavy", percent: 80, gpuPercent: 10),
+        .init(pid: 3, name: "Neither", percent: 10, gpuPercent: nil)
+    ])
+}
+
 @Test func calculatorAggregatesCPUAndMemoryByApplicationGroup() {
     var calculator = ResourceConsumerCalculator()
     _ = calculator.consume(.init(monotonicNanoseconds: 100, records: [
-        record(7, "Google Chrome", 10, 30, group: "app:/Applications/Google Chrome.app"),
-        record(3, "Google Chrome", 20, 40, group: "app:/Applications/Google Chrome.app"),
+        record(7, "Google Chrome", 10, 30, gpu: 100, group: "app:/Applications/Google Chrome.app"),
+        record(3, "Google Chrome", 20, 40, gpu: 200, group: "app:/Applications/Google Chrome.app"),
         record(8, "ChatGPT", 10, 60, group: "app:/Applications/ChatGPT.app")
     ]))
     let result = calculator.consume(.init(monotonicNanoseconds: 200, records: [
-        record(7, "Google Chrome", 110, 50, group: "app:/Applications/Google Chrome.app"),
-        record(3, "Google Chrome", 220, 70, group: "app:/Applications/Google Chrome.app"),
+        record(7, "Google Chrome", 110, 50, gpu: 150, group: "app:/Applications/Google Chrome.app"),
+        record(3, "Google Chrome", 220, 70, gpu: 250, group: "app:/Applications/Google Chrome.app"),
         record(8, "ChatGPT", 110, 60, group: "app:/Applications/ChatGPT.app")
     ]))
     #expect(result.memory == .available([.init(pid: 3, name: "Google Chrome", physicalFootprintBytes: 120), .init(pid: 8, name: "ChatGPT", physicalFootprintBytes: 60)]))
-    #expect(result.cpu == .available([.init(pid: 3, name: "Google Chrome", percent: 300), .init(pid: 8, name: "ChatGPT", percent: 100)]))
+    #expect(result.cpu == .available([.init(pid: 3, name: "Google Chrome", percent: 300, gpuPercent: 100), .init(pid: 8, name: "ChatGPT", percent: 100)]))
 }
 
 @Test func calculatorSeparatesGroupsWithTheSameDisplayNameAndGroupsStandaloneExecutables() {
@@ -120,4 +142,4 @@ import Testing
     #expect(rows.map(\.pid) == [2, 3, 4])
 }
 
-private func record(_ pid: Int32, _ name: String, _ cpu: UInt64, _ memory: UInt64, start: UInt64 = 1, group: String? = nil) -> ConsumerUsageRecord { .init(pid: pid, startTime: start, groupID: group ?? "pid:\(pid):\(start)", name: name, cumulativeCPUTimeNanoseconds: cpu, physicalFootprintBytes: memory) }
+private func record(_ pid: Int32, _ name: String, _ cpu: UInt64, _ memory: UInt64, gpu: UInt64? = nil, start: UInt64 = 1, group: String? = nil) -> ConsumerUsageRecord { .init(pid: pid, startTime: start, groupID: group ?? "pid:\(pid):\(start)", name: name, cumulativeCPUTimeNanoseconds: cpu, physicalFootprintBytes: memory, cumulativeGPUTimeNanoseconds: gpu) }

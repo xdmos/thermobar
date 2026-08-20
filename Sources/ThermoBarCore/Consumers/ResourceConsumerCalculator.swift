@@ -1,12 +1,16 @@
 import Foundation
 
 struct ConsumerUsageRecord: Equatable, Sendable {
-    let pid: Int32; let startTime: UInt64; let groupID: String; let name: String; let cumulativeCPUTimeNanoseconds: UInt64; let physicalFootprintBytes: UInt64
+    let pid: Int32; let startTime: UInt64; let groupID: String; let name: String; let cumulativeCPUTimeNanoseconds: UInt64; let cumulativeGPUTimeNanoseconds: UInt64?; let physicalFootprintBytes: UInt64
+
+    init(pid: Int32, startTime: UInt64, groupID: String, name: String, cumulativeCPUTimeNanoseconds: UInt64, physicalFootprintBytes: UInt64, cumulativeGPUTimeNanoseconds: UInt64? = nil) {
+        self.pid = pid; self.startTime = startTime; self.groupID = groupID; self.name = name; self.cumulativeCPUTimeNanoseconds = cumulativeCPUTimeNanoseconds; self.physicalFootprintBytes = physicalFootprintBytes; self.cumulativeGPUTimeNanoseconds = cumulativeGPUTimeNanoseconds
+    }
 }
 struct ConsumerUsageReading: Equatable, Sendable { let monotonicNanoseconds: UInt64; let records: [ConsumerUsageRecord] }
 
 struct ResourceConsumerCalculator: Sendable {
-    private struct Baseline: Sendable { let startTime: UInt64; let groupID: String; let cpu: UInt64 }
+    private struct Baseline: Sendable { let startTime: UInt64; let groupID: String; let cpu: UInt64; let gpu: UInt64? }
     private struct Aggregate: Sendable {
         let groupID: String
         let name: String
@@ -16,6 +20,7 @@ struct ResourceConsumerCalculator: Sendable {
     private struct CPUAggregate: Sendable {
         let aggregate: Aggregate
         let percent: Double
+        let gpuPercent: Double?
     }
     private var timestamp: UInt64?
     private var baselines: [Int32: Baseline] = [:]
@@ -40,25 +45,37 @@ struct ResourceConsumerCalculator: Sendable {
         }
         let elapsed = reading.monotonicNanoseconds - priorTimestamp
         var cpuDeltas: [(ConsumerUsageRecord, UInt64)] = []
+        var gpuDeltas: [(ConsumerUsageRecord, UInt64)] = []
         for record in reading.records {
-            guard let prior = baselines[record.pid], prior.startTime == record.startTime, prior.groupID == record.groupID, record.cumulativeCPUTimeNanoseconds >= prior.cpu else { continue }
-            cpuDeltas.append((record, record.cumulativeCPUTimeNanoseconds - prior.cpu))
+            guard let prior = baselines[record.pid], prior.startTime == record.startTime, prior.groupID == record.groupID else { continue }
+            if record.cumulativeCPUTimeNanoseconds >= prior.cpu {
+                cpuDeltas.append((record, record.cumulativeCPUTimeNanoseconds - prior.cpu))
+            }
+            if let priorGPU = prior.gpu, let currentGPU = record.cumulativeGPUTimeNanoseconds, currentGPU >= priorGPU {
+                gpuDeltas.append((record, currentGPU - priorGPU))
+            }
         }
         advanceBaselines(with: reading)
         guard let cpuGroups = Self.aggregate(cpuDeltas.map(\.0), values: cpuDeltas.map(\.1)) else {
             return .init(cpu: .unavailable, memory: memory)
         }
+        let gpuGroups = Self.aggregate(gpuDeltas.map(\.0), values: gpuDeltas.map(\.1))
+        let gpuPercentByGroup = Dictionary(uniqueKeysWithValues: (gpuGroups ?? []).compactMap { group -> (String, Double)? in
+            let percent = Double(group.value) / Double(elapsed) * 100
+            guard percent.isFinite, percent >= 0 else { return nil }
+            return (group.groupID, percent)
+        })
         let cpuRows = cpuGroups.compactMap { group -> CPUAggregate? in
             let percent = Double(group.value) / Double(elapsed) * 100
             guard percent.isFinite, percent >= 0, let current = currentGroups[group.groupID] else { return nil }
-            return .init(aggregate: .init(groupID: group.groupID, name: group.name, representativePID: current.representativePID, value: group.value), percent: percent)
+            return .init(aggregate: .init(groupID: group.groupID, name: group.name, representativePID: current.representativePID, value: group.value), percent: percent, gpuPercent: gpuPercentByGroup[group.groupID])
         }
-        let ranked = cpuRows.sorted(by: Self.cpuAggregateOrder).prefix(3).map { ResourceConsumerCPUEntry(pid: $0.aggregate.representativePID, name: $0.aggregate.name, percent: $0.percent) }
+        let ranked = cpuRows.sorted(by: Self.cpuAggregateOrder).prefix(3).map { ResourceConsumerCPUEntry(pid: $0.aggregate.representativePID, name: $0.aggregate.name, percent: $0.percent, gpuPercent: $0.gpuPercent) }
         return .init(cpu: ranked.isEmpty ? .measuring : .available(Array(ranked)), memory: memory)
     }
     private mutating func advanceBaselines(with reading: ConsumerUsageReading) {
         timestamp = reading.monotonicNanoseconds
-        baselines = Dictionary(uniqueKeysWithValues: reading.records.map { ($0.pid, Baseline(startTime: $0.startTime, groupID: $0.groupID, cpu: $0.cumulativeCPUTimeNanoseconds)) })
+        baselines = Dictionary(uniqueKeysWithValues: reading.records.map { ($0.pid, Baseline(startTime: $0.startTime, groupID: $0.groupID, cpu: $0.cumulativeCPUTimeNanoseconds, gpu: $0.cumulativeGPUTimeNanoseconds)) })
     }
     private static func aggregate(_ records: [ConsumerUsageRecord], value: KeyPath<ConsumerUsageRecord, UInt64>) -> [Aggregate]? { aggregate(records, values: records.map { $0[keyPath: value] }) }
     private static func validateGroups(_ records: [ConsumerUsageRecord]) -> Bool {
@@ -103,5 +120,9 @@ struct ResourceConsumerCalculator: Sendable {
     private static func memoryEntry(_ group: Aggregate) -> ResourceConsumerMemoryEntry { .init(pid: group.representativePID, name: group.name, physicalFootprintBytes: group.value) }
     private static func nameOrder(_ lhs: String, _ rhs: String) -> Bool { lhs.unicodeScalars.lexicographicallyPrecedes(rhs.unicodeScalars) }
     private static func aggregateOrder(_ lhs: Aggregate, _ rhs: Aggregate) -> Bool { lhs.value != rhs.value ? lhs.value > rhs.value : lhs.name != rhs.name ? nameOrder(lhs.name, rhs.name) : lhs.groupID < rhs.groupID }
-    private static func cpuAggregateOrder(_ lhs: CPUAggregate, _ rhs: CPUAggregate) -> Bool { lhs.percent != rhs.percent ? lhs.percent > rhs.percent : lhs.aggregate.name != rhs.aggregate.name ? nameOrder(lhs.aggregate.name, rhs.aggregate.name) : lhs.aggregate.groupID < rhs.aggregate.groupID }
+    private static func cpuAggregateOrder(_ lhs: CPUAggregate, _ rhs: CPUAggregate) -> Bool {
+        let lhsGPU = lhs.gpuPercent ?? 0
+        let rhsGPU = rhs.gpuPercent ?? 0
+        return lhsGPU != rhsGPU ? lhsGPU > rhsGPU : lhs.percent != rhs.percent ? lhs.percent > rhs.percent : lhs.aggregate.name != rhs.aggregate.name ? nameOrder(lhs.aggregate.name, rhs.aggregate.name) : lhs.aggregate.groupID < rhs.aggregate.groupID
+    }
 }

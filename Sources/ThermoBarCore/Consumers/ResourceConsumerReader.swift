@@ -13,7 +13,20 @@ struct ResourceConsumerReader: Sendable {
         let usage: @Sendable (Int32) -> NativeUsage?
         let shortName: @Sendable (Int32) -> String?
         let path: @Sendable (Int32) -> String?
+        let gpuUsage: @Sendable () -> [Int32: UInt64]
         let clock: @Sendable () -> UInt64
+
+        init(
+            count: @escaping @Sendable () -> Int32,
+            fill: @escaping @Sendable (UnsafeMutableRawPointer?, Int32) -> Int32,
+            usage: @escaping @Sendable (Int32) -> NativeUsage?,
+            shortName: @escaping @Sendable (Int32) -> String?,
+            path: @escaping @Sendable (Int32) -> String?,
+            gpuUsage: @escaping @Sendable () -> [Int32: UInt64] = { [:] },
+            clock: @escaping @Sendable () -> UInt64
+        ) {
+            self.count = count; self.fill = fill; self.usage = usage; self.shortName = shortName; self.path = path; self.gpuUsage = gpuUsage; self.clock = clock
+        }
     }
     private let dependencies: Dependencies
 
@@ -44,6 +57,7 @@ struct ResourceConsumerReader: Sendable {
             // at buffer[result], just as proc_pidpath does.
             shortName: { pid in Self.string(capacity: Int(2 * MAXCOMLEN)) { proc_name(pid, $0, UInt32(2 * MAXCOMLEN)) } },
             path: { pid in Self.string(capacity: Self.pathCapacity) { proc_pidpath(pid, $0, UInt32(Self.pathCapacity)) } },
+            gpuUsage: { GPUClientUsageReader().read() },
             clock: { MonotonicClock.nowNanoseconds() }
         )
     }
@@ -51,6 +65,7 @@ struct ResourceConsumerReader: Sendable {
 
     func read() -> ConsumerUsageReading? {
         guard let pids = enumerate() else { return nil }
+        let gpuUsage = dependencies.gpuUsage()
         var records: [ConsumerUsageRecord] = []
         var seen = Set<Int32>()
         for pid in pids where pid > 0 && seen.insert(pid).inserted {
@@ -63,7 +78,7 @@ struct ResourceConsumerReader: Sendable {
             let sum = usage.user.addingReportingOverflow(usage.system)
             guard !sum.overflow else { continue }
             let total = sum.partialValue
-            records.append(.init(pid: pid, startTime: usage.startTime, groupID: beforeResolved.groupID, name: beforeResolved.name, cumulativeCPUTimeNanoseconds: total, physicalFootprintBytes: usage.footprint))
+            records.append(.init(pid: pid, startTime: usage.startTime, groupID: beforeResolved.groupID, name: beforeResolved.name, cumulativeCPUTimeNanoseconds: total, physicalFootprintBytes: usage.footprint, cumulativeGPUTimeNanoseconds: gpuUsage[pid]))
         }
         return .init(monotonicNanoseconds: dependencies.clock(), records: records)
     }

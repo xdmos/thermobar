@@ -4,9 +4,9 @@ enum PreviewFixtures {
     static let nowNanoseconds: UInt64 = 1_000_000_000_000
     static let resourceConsumers = ResourceConsumerMetric(
         cpu: .available([
-            .init(pid: 1, name: "Preview Browser with a deliberately long process name", percent: 137),
-            .init(pid: 2, name: "Preview Browser with a deliberately long process name", percent: 84),
-            .init(pid: 3, name: "WindowServer", percent: 22)
+            .init(pid: 1, name: "Preview Browser with a deliberately long process name", percent: 137, gpuPercent: 22),
+            .init(pid: 2, name: "Local Model", percent: 84, gpuPercent: 71),
+            .init(pid: 3, name: "WindowServer", percent: 22, gpuPercent: 12)
         ]),
         memory: .available([
             .init(pid: 1, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 1_800 * 1_024 * 1_024),

@@ -7,6 +7,15 @@ import Darwin
     #expect(reader.read() == .init(monotonicNanoseconds: 99, records: [.init(pid: 42, startTime: 5, groupID: "pid:42:5", name: "ReaderTest", cumulativeCPUTimeNanoseconds: 5, physicalFootprintBytes: 4)]))
 }
 
+@Test func readerAttachesTheMatchingGPUCounterWithoutChangingProcessIdentity() {
+    let reader = ResourceConsumerReader(dependencies: .init(
+        count: { 1 }, fill: { pointer, _ in pointer!.assumingMemoryBound(to: Int32.self)[0] = 42; return 1 },
+        usage: { _ in .init(user: 2, system: 3, footprint: 4, startTime: 5) }, shortName: { _ in "Model" }, path: { _ in nil },
+        gpuUsage: { [42: 123] }, clock: { 99 }
+    ))
+    #expect(reader.read()?.records == [.init(pid: 42, startTime: 5, groupID: "pid:42:5", name: "Model", cumulativeCPUTimeNanoseconds: 5, physicalFootprintBytes: 4, cumulativeGPUTimeNanoseconds: 123)])
+}
+
 @Test func readerRejectsEnumerationFailuresAndAllowsEmptyPass() {
     let bad = ResourceConsumerReader(dependencies: .init(count: { -1 }, fill: { _, _ in 0 }, usage: { _ in nil }, shortName: { _ in nil }, path: { _ in nil }, clock: { 1 }))
     #expect(bad.read() == nil)

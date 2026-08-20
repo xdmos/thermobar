@@ -2,7 +2,8 @@ public struct ResourceConsumerCPUEntry: Equatable, Sendable {
     public let pid: Int32
     public let name: String
     public let percent: Double
-    public init(pid: Int32, name: String, percent: Double) { self.pid = pid; self.name = name; self.percent = percent }
+    public let gpuPercent: Double?
+    public init(pid: Int32, name: String, percent: Double, gpuPercent: Double? = nil) { self.pid = pid; self.name = name; self.percent = percent; self.gpuPercent = gpuPercent }
 }
 
 public struct ResourceConsumerMemoryEntry: Equatable, Sendable {
