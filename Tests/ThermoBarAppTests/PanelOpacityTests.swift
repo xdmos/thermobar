@@ -125,6 +125,21 @@ import Testing
     #expect(!AppPreferences(defaults: defaults).showMemoryConsumers)
 }
 
+@Test func consumerVisibilityMenuUsesCompactLabelsAndDescriptiveAccessibilityLabels() throws {
+    let catalogURL = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Sources/ThermoBar/Resources/Localizable.xcstrings")
+    let catalog = try String(contentsOf: catalogURL, encoding: .utf8)
+
+    #expect(catalog.contains("\"setting.visible-in-panel\""))
+    #expect(catalog.contains("\"value\" : \"CPU/GPU\""))
+    #expect(catalog.contains("\"value\" : \"RAM\""))
+    #expect(catalog.contains("\"accessibility.show-compute-consumers\""))
+    #expect(catalog.contains("\"accessibility.show-memory-consumers\""))
+}
+
 @Test @MainActor func floatingPanelContentKeepsItsBackgroundAtFullStrengthForWindowLevelOpacity() {
     let background = FloatingPanelBackground(contrast: .standard)
     let content = FloatingPanelContent(
@@ -139,7 +154,7 @@ import Testing
     #expect(content.background.contrast == .standard)
 }
 
-@Test func consumerVisibilityControlsTheFooterWithoutSuppressingWarnings() {
+@Test @MainActor func consumerVisibilityControlsTheFooterWithoutSuppressingWarnings() {
     let neither = ResourceConsumerVisibility(showCompute: false, showMemory: false)
 
     #expect(!FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: neither, hasDiagnostic: false, isFresh: true))

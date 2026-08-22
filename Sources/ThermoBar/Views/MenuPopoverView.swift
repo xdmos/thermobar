@@ -44,13 +44,19 @@ struct MenuPopoverView: View {
                     .accessibilityValue(Text(verbatim: panelOpacityControl.accessibilityValue()))
             }
             Divider()
-            VStack(alignment: .leading, spacing: 4) {
-                Text(ThermoBarCopy.panelView)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(ThermoBarCopy.visibleInPanel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle(ThermoBarCopy.showComputeConsumers, isOn: showComputeConsumersBinding)
+                    .toggleStyle(.checkbox)
+                    .accessibilityLabel(Text(ThermoBarCopy.showComputeConsumersAccessibility))
                 Toggle(ThermoBarCopy.showMemoryConsumers, isOn: showMemoryConsumersBinding)
+                    .toggleStyle(.checkbox)
+                    .accessibilityLabel(Text(ThermoBarCopy.showMemoryConsumersAccessibility))
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(Text(ThermoBarCopy.visibleInPanel))
             Toggle(ThermoBarCopy.launchAtLogin, isOn: launchAtLoginBinding)
             launchAtLoginStatus
             Toggle(ThermoBarCopy.thermalNotifications, isOn: notificationBinding)
@@ -67,7 +73,7 @@ struct MenuPopoverView: View {
             }
         }
         .padding(14)
-        .frame(width: 340, alignment: .leading)
+        .frame(width: 260, alignment: .leading)
     }
 
     private func status(nowNanoseconds: UInt64) -> some View {
