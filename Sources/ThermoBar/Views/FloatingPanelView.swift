@@ -10,15 +10,17 @@ struct FloatingPanelView: View {
     private let mode: SamplingMode
     private let nowNanoseconds: UInt64?
     private let diagnostics: [SamplingDiagnostic]
+    private let resourceConsumerVisibility: ResourceConsumerVisibility
     private let accessibilityOverride: PreviewAccessibilityOverride?
     private let onClose: (() -> Void)?
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
-    init(snapshot: SystemSnapshot?, mode: SamplingMode, diagnostics: [SamplingDiagnostic] = [], nowNanoseconds: UInt64? = nil, accessibilityOverride: PreviewAccessibilityOverride? = nil, onClose: (() -> Void)? = nil) {
+    init(snapshot: SystemSnapshot?, mode: SamplingMode, diagnostics: [SamplingDiagnostic] = [], resourceConsumerVisibility: ResourceConsumerVisibility = .all, nowNanoseconds: UInt64? = nil, accessibilityOverride: PreviewAccessibilityOverride? = nil, onClose: (() -> Void)? = nil) {
         self.snapshot = snapshot
         self.mode = mode
         self.diagnostics = diagnostics
+        self.resourceConsumerVisibility = resourceConsumerVisibility
         self.nowNanoseconds = nowNanoseconds
         self.accessibilityOverride = accessibilityOverride
         self.onClose = onClose
@@ -29,6 +31,7 @@ struct FloatingPanelView: View {
             FloatingPanelContent(
                 presentation: ThermoBarPresentation(snapshot: snapshot, mode: mode, nowNanoseconds: now),
                 sensorStatus: ThermoBarPresentation.sensorStatus(snapshot: snapshot, diagnostics: diagnostics),
+                resourceConsumerVisibility: resourceConsumerVisibility,
                 background: FloatingPanelBackground(contrast: effectiveContrast),
                 reduceMotion: effectiveReduceMotion,
                 onClose: onClose
@@ -43,6 +46,7 @@ struct FloatingPanelView: View {
 struct FloatingPanelContent: View {
     let presentation: ThermoBarPresentation
     let sensorStatus: ThermoBarPresentation.SensorStatus
+    let resourceConsumerVisibility: ResourceConsumerVisibility
     let background: FloatingPanelBackground
     let reduceMotion: Bool
     let onClose: (() -> Void)?
@@ -53,8 +57,10 @@ struct FloatingPanelContent: View {
             header
             Divider()
             metricGrid
-            Divider()
-            footer
+            if shouldShowFooter {
+                Divider()
+                footer
+            }
         }
         .padding(14)
         .frame(width: FloatingPanelLayout.width, alignment: .leading)
@@ -155,8 +161,26 @@ struct FloatingPanelContent: View {
         }
         .accessibilityElement(children: .combine)
         }
-        ResourceConsumerList(metric: presentation.resourceConsumers)
+        if resourceConsumerVisibility.showsAny {
+            ResourceConsumerList(metric: presentation.resourceConsumers, visibility: resourceConsumerVisibility)
         }
+        }
+    }
+
+    private var shouldShowFooter: Bool {
+        Self.shouldShowFooter(
+            resourceConsumerVisibility: resourceConsumerVisibility,
+            hasDiagnostic: ThermoBarPresentation.footerDiagnostic(for: sensorStatus) != nil,
+            isFresh: presentation.isFresh
+        )
+    }
+
+    static func shouldShowFooter(
+        resourceConsumerVisibility: ResourceConsumerVisibility,
+        hasDiagnostic: Bool,
+        isFresh: Bool
+    ) -> Bool {
+        resourceConsumerVisibility.showsAny || hasDiagnostic || !isFresh
     }
 
 }
@@ -455,6 +479,9 @@ enum ThermoBarCopy {
     static let showPanel = resource("action.show-panel")
     static let hidePanel = resource("action.hide-panel")
     static let panelOpacity = resource("setting.panel-opacity")
+    static let panelView = resource("setting.panel-view")
+    static let showComputeConsumers = resource("setting.show-compute-consumers")
+    static let showMemoryConsumers = resource("setting.show-memory-consumers")
     static let launchAtLogin = resource("setting.launch-at-login")
     static let thermalNotifications = resource("setting.thermal-notifications")
     static let settings = resource("action.settings")

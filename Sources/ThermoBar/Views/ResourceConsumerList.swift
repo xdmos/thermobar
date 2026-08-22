@@ -2,6 +2,15 @@ import Foundation
 import SwiftUI
 import ThermoBarCore
 
+struct ResourceConsumerVisibility: Equatable {
+    static let all = Self(showCompute: true, showMemory: true)
+
+    let showCompute: Bool
+    let showMemory: Bool
+
+    var showsAny: Bool { showCompute || showMemory }
+}
+
 private struct RankedConsumerRow<Row>: Identifiable {
     let index: Int
     let row: Row
@@ -56,10 +65,21 @@ enum ResourceConsumerPresentation {
 
 struct ResourceConsumerList: View {
     let metric: ResourceConsumerMetric
+    let visibility: ResourceConsumerVisibility
+
+    init(metric: ResourceConsumerMetric, visibility: ResourceConsumerVisibility = .all) {
+        self.metric = metric
+        self.visibility = visibility
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            cpuSection
-            memorySection
+            if visibility.showCompute {
+                cpuSection
+            }
+            if visibility.showMemory {
+                memorySection
+            }
         }
     }
     private var cpuSection: some View {

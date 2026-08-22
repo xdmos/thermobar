@@ -28,6 +28,8 @@ final class AppModel {
     private(set) var diagnostics: [SamplingDiagnostic] = []
     private(set) var panelVisible: Bool
     private(set) var panelOpacity: Double
+    private(set) var showComputeConsumers: Bool
+    private(set) var showMemoryConsumers: Bool
     private(set) var notificationsEnabled: Bool
     private(set) var launchAtLoginEnabled: Bool
     private(set) var launchAtLoginStatus: LaunchAtLoginStatus
@@ -68,6 +70,8 @@ final class AppModel {
         self.notificationStateDidChange = notificationStateDidChange
         panelVisible = preferences.panelVisible
         panelOpacity = preferences.panelOpacity
+        showComputeConsumers = preferences.showComputeConsumers
+        showMemoryConsumers = preferences.showMemoryConsumers
         notificationsEnabled = preferences.thermalNotifications
         launchAtLoginStatus = launchAtLogin.status
         launchAtLoginEnabled = launchAtLogin.status == .enabled
@@ -128,6 +132,16 @@ final class AppModel {
     func setPanelOpacity(_ opacity: Double) {
         preferences.panelOpacity = opacity
         panelOpacity = preferences.panelOpacity
+    }
+
+    func setShowComputeConsumers(_ visible: Bool) {
+        preferences.showComputeConsumers = visible
+        showComputeConsumers = preferences.showComputeConsumers
+    }
+
+    func setShowMemoryConsumers(_ visible: Bool) {
+        preferences.showMemoryConsumers = visible
+        showMemoryConsumers = preferences.showMemoryConsumers
     }
 
     private func recordPanelVisibilityIntent(_ visible: Bool) -> UInt64? {

@@ -43,6 +43,14 @@ struct MenuPopoverView: View {
                     .accessibilityLabel(Text(panelOpacityControl.accessibilityLabel))
                     .accessibilityValue(Text(verbatim: panelOpacityControl.accessibilityValue()))
             }
+            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                Text(ThermoBarCopy.panelView)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle(ThermoBarCopy.showComputeConsumers, isOn: showComputeConsumersBinding)
+                Toggle(ThermoBarCopy.showMemoryConsumers, isOn: showMemoryConsumersBinding)
+            }
             Toggle(ThermoBarCopy.launchAtLogin, isOn: launchAtLoginBinding)
             launchAtLoginStatus
             Toggle(ThermoBarCopy.thermalNotifications, isOn: notificationBinding)
@@ -59,7 +67,7 @@ struct MenuPopoverView: View {
             }
         }
         .padding(14)
-        .frame(width: 260, alignment: .leading)
+        .frame(width: 340, alignment: .leading)
     }
 
     private func status(nowNanoseconds: UInt64) -> some View {
@@ -126,6 +134,20 @@ struct MenuPopoverView: View {
         Binding(
             get: { model.panelOpacity },
             set: { model.setPanelOpacity($0) }
+        )
+    }
+
+    var showComputeConsumersBinding: Binding<Bool> {
+        Binding(
+            get: { model.showComputeConsumers },
+            set: { model.setShowComputeConsumers($0) }
+        )
+    }
+
+    var showMemoryConsumersBinding: Binding<Bool> {
+        Binding(
+            get: { model.showMemoryConsumers },
+            set: { model.setShowMemoryConsumers($0) }
         )
     }
 

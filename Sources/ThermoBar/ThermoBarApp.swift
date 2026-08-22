@@ -58,6 +58,10 @@ private struct FloatingPanelSceneContent: View {
             snapshot: model.snapshot,
             mode: model.panelVisible ? .visible : .menuBarOnly,
             diagnostics: model.diagnostics,
+            resourceConsumerVisibility: .init(
+                showCompute: model.showComputeConsumers,
+                showMemory: model.showMemoryConsumers
+            ),
             onClose: {
                 dismissWindow(id: "floating-panel")
                 model.setPanelVisibilityIntent(false)

@@ -20,8 +20,8 @@ The measurement pipeline continues to collect both resource-consumer metrics;
 the controls only affect presentation.
 
 In the floating panel the compute heading changes from "Najwięcej CPU / GPU"
-to "CPU / GPU", and the memory heading changes from "Najwięcej RAM" to
-"RAM". English strings also become "CPU / GPU" and "RAM". A new
+to "CPU/GPU", and the memory heading changes from "Najwięcej RAM" to
+"RAM". English strings also become "CPU/GPU" and "RAM". A new
 `setting.panel-view` catalog key supplies the section heading; the new keys are
 exposed through `ThermoBarCopy` alongside the existing menu strings.
 

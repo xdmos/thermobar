@@ -89,17 +89,65 @@ import Testing
     #expect(AppPreferences(defaults: defaults).panelOpacity == 0.65)
 }
 
+@Test @MainActor func consumerVisibilityDefaultsToVisibleAndRejectsInvalidStoredValues() {
+    let defaults = panelOpacityDefaults()
+
+    #expect(AppPreferences(defaults: defaults).showComputeConsumers)
+    #expect(AppPreferences(defaults: defaults).showMemoryConsumers)
+
+    defaults.set("invalid", forKey: "thermobar.showComputeConsumers")
+    defaults.set("invalid", forKey: "thermobar.showMemoryConsumers")
+
+    #expect(AppPreferences(defaults: defaults).showComputeConsumers)
+    #expect(AppPreferences(defaults: defaults).showMemoryConsumers)
+}
+
+@Test @MainActor func consumerVisibilityModelAndMenuBindingsPersistIndependently() {
+    let defaults = panelOpacityDefaults()
+    let preferences = AppPreferences(defaults: defaults)
+    let model = AppModel(
+        preferences: preferences,
+        sampler: OpacityCountingSampler(),
+        notifications: OpacityNoopNotifications()
+    )
+    let menu = MenuPopoverView(model: model)
+
+    menu.showComputeConsumersBinding.wrappedValue = false
+
+    #expect(!model.showComputeConsumers)
+    #expect(model.showMemoryConsumers)
+    #expect(!AppPreferences(defaults: defaults).showComputeConsumers)
+    #expect(AppPreferences(defaults: defaults).showMemoryConsumers)
+
+    menu.showMemoryConsumersBinding.wrappedValue = false
+
+    #expect(!model.showMemoryConsumers)
+    #expect(!AppPreferences(defaults: defaults).showMemoryConsumers)
+}
+
 @Test @MainActor func floatingPanelContentKeepsItsBackgroundAtFullStrengthForWindowLevelOpacity() {
     let background = FloatingPanelBackground(contrast: .standard)
     let content = FloatingPanelContent(
         presentation: ThermoBarPresentation(snapshot: nil, mode: .visible, nowNanoseconds: 1),
         sensorStatus: .waiting,
+        resourceConsumerVisibility: .all,
         background: background,
         reduceMotion: false,
         onClose: nil
     )
 
     #expect(content.background.contrast == .standard)
+}
+
+@Test func consumerVisibilityControlsTheFooterWithoutSuppressingWarnings() {
+    let neither = ResourceConsumerVisibility(showCompute: false, showMemory: false)
+
+    #expect(!FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: neither, hasDiagnostic: false, isFresh: true))
+    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: .init(showCompute: true, showMemory: false), hasDiagnostic: false, isFresh: true))
+    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: .init(showCompute: false, showMemory: true), hasDiagnostic: false, isFresh: true))
+    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: .all, hasDiagnostic: false, isFresh: true))
+    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: neither, hasDiagnostic: true, isFresh: true))
+    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: neither, hasDiagnostic: false, isFresh: false))
 }
 
 @MainActor private func panelOpacityDefaults() -> UserDefaults {

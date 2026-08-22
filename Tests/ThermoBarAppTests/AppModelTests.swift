@@ -16,17 +16,21 @@ import Testing
     let frame = PanelFrameRecord(displayIdentifier: 42, x: 12, y: 24, width: 238, height: 330)
     let preferences = AppPreferences(defaults: defaults)
     preferences.panelVisible = false
+    preferences.showComputeConsumers = false
+    preferences.showMemoryConsumers = false
     preferences.launchAtLogin = true
     preferences.thermalNotifications = true
     preferences.panelFrame = frame
 
     let reloaded = AppPreferences(defaults: defaults)
     #expect(reloaded.panelVisible == false)
+    #expect(reloaded.showComputeConsumers == false)
+    #expect(reloaded.showMemoryConsumers == false)
     #expect(reloaded.launchAtLogin == true)
     #expect(reloaded.thermalNotifications == true)
     #expect(reloaded.panelFrame == frame)
     let keys = Set((defaults.persistentDomain(forName: suiteName) ?? [:]).keys.filter { $0.hasPrefix("thermobar.") })
-    #expect(keys == ["thermobar.panelVisible", "thermobar.launchAtLogin", "thermobar.thermalNotifications", "thermobar.panelFrame"])
+    #expect(keys == ["thermobar.panelVisible", "thermobar.showComputeConsumers", "thermobar.showMemoryConsumers", "thermobar.launchAtLogin", "thermobar.thermalNotifications", "thermobar.panelFrame"])
 }
 
 @Test @MainActor func panelAndPowerEventsSelectExactSamplingModes() async {

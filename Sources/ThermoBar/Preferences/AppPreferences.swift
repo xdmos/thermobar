@@ -13,6 +13,8 @@ final class AppPreferences {
     private enum Key {
         static let panelVisible = "thermobar.panelVisible"
         static let panelOpacity = "thermobar.panelOpacity"
+        static let showComputeConsumers = "thermobar.showComputeConsumers"
+        static let showMemoryConsumers = "thermobar.showMemoryConsumers"
         static let launchAtLogin = "thermobar.launchAtLogin"
         static let thermalNotifications = "thermobar.thermalNotifications"
         static let panelFrame = "thermobar.panelFrame"
@@ -44,6 +46,16 @@ final class AppPreferences {
             let value = newValue.isFinite ? min(max(newValue, panelOpacityRange.lowerBound), panelOpacityRange.upperBound) : defaultPanelOpacity
             defaults.set(value, forKey: Key.panelOpacity)
         }
+    }
+
+    var showComputeConsumers: Bool {
+        get { defaults.object(forKey: Key.showComputeConsumers) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.showComputeConsumers) }
+    }
+
+    var showMemoryConsumers: Bool {
+        get { defaults.object(forKey: Key.showMemoryConsumers) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.showMemoryConsumers) }
     }
 
     var launchAtLogin: Bool {
