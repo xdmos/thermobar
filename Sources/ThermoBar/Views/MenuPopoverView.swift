@@ -60,8 +60,12 @@ struct MenuPopoverView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text(ThermoBarCopy.visibleInPanel))
             Toggle(ThermoBarCopy.launchAtLogin, isOn: launchAtLoginBinding)
+                .toggleStyle(.checkbox)
+                .frame(minHeight: 24, alignment: .leading)
             launchAtLoginStatus
             Toggle(ThermoBarCopy.thermalNotifications, isOn: notificationBinding)
+                .toggleStyle(.checkbox)
+                .frame(minHeight: 24, alignment: .leading)
             sensorDiagnostic
             Button(ThermoBarCopy.retrySensors) {
                 Task { await model.retrySensors() }
