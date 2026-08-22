@@ -44,16 +44,18 @@ struct MenuPopoverView: View {
                     .accessibilityValue(Text(verbatim: panelOpacityControl.accessibilityValue()))
             }
             Divider()
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(ThermoBarCopy.visibleInPanel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle(ThermoBarCopy.showComputeConsumers, isOn: showComputeConsumersBinding)
                     .toggleStyle(.checkbox)
                     .accessibilityLabel(Text(ThermoBarCopy.showComputeConsumersAccessibility))
+                    .frame(minHeight: 24, alignment: .leading)
                 Toggle(ThermoBarCopy.showMemoryConsumers, isOn: showMemoryConsumersBinding)
                     .toggleStyle(.checkbox)
                     .accessibilityLabel(Text(ThermoBarCopy.showMemoryConsumersAccessibility))
+                    .frame(minHeight: 24, alignment: .leading)
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text(ThermoBarCopy.visibleInPanel))
