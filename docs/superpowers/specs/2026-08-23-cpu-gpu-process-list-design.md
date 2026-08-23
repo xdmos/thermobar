@@ -12,21 +12,25 @@ użycie GPU na tym samym wierszu.
 ## Zachowanie
 
 - Sekcja nosi tytuł **Procesy**.
-- Pokazuje od jednej do pięciu pozycji, posortowanych malejąco po użyciu CPU.
+- Pokazuje od jednej do pięciu pojedynczych procesów (PID), posortowanych
+  malejąco po użyciu CPU. Jest to celowo zgodne z listą „Top Processes”
+  aplikacji Stats, a nie z dotychczasowym grupowaniem rodzin aplikacji.
 - Każda pozycja jest pojedynczym wierszem: numer, nazwa procesu oraz
   `CPU <wartość> · GPU <wartość>`.
 - Gdy dla procesu nie ma wiarygodnego licznika Metal GPU, UI pokazuje
   `GPU —`; brak ten nie wpływa na kolejność.
 - Wartości CPU zachowują dotychczasową semantykę w stylu Activity Monitor:
   jeden proces wielowątkowy może przekroczyć 100%.
-- Sekcja RAM oraz jej opcja widoczności nie zmieniają się.
+- Sekcja RAM oraz jej opcja widoczności nie zmieniają się; RAM nadal agreguje
+  procesy należące do tej samej aplikacji.
 - Stan pierwszego pomiaru i błąd odczytu nadal korzystają z obecnych tekstów
   zastępczych.
 
 ## Implementacja
 
-1. W `ResourceConsumerCalculator` sortować wiersze wyłącznie według CPU i
-   ograniczać wynik do pięciu.
+1. W `ResourceConsumerCalculator` zachować zgrupowaną ścieżkę RAM, natomiast
+   z delty CPU/GPU tworzyć osobne wiersze per PID, sortowane wyłącznie według
+   CPU i ograniczone do pięciu.
 2. W `ResourceConsumerList` usunąć dwuwierszowy układ procesów, zmienić tytuł
    na `Procesy` i renderować CPU oraz GPU jako pojedynczą wartość po prawej.
 3. Zaktualizować katalog polski i angielski oraz testy kalkulatora i prezentacji.
