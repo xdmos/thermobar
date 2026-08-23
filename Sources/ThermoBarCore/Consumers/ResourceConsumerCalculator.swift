@@ -1,10 +1,10 @@
 import Foundation
 
 struct ConsumerUsageRecord: Equatable, Sendable {
-    let pid: Int32; let startTime: UInt64; let groupID: String; let name: String; let cumulativeCPUTimeNanoseconds: UInt64; let cumulativeGPUTimeNanoseconds: UInt64?; let physicalFootprintBytes: UInt64
+    let pid: Int32; let startTime: UInt64; let groupID: String; let name: String; let processName: String; let cumulativeCPUTimeNanoseconds: UInt64; let cumulativeGPUTimeNanoseconds: UInt64?; let physicalFootprintBytes: UInt64
 
-    init(pid: Int32, startTime: UInt64, groupID: String, name: String, cumulativeCPUTimeNanoseconds: UInt64, physicalFootprintBytes: UInt64, cumulativeGPUTimeNanoseconds: UInt64? = nil) {
-        self.pid = pid; self.startTime = startTime; self.groupID = groupID; self.name = name; self.cumulativeCPUTimeNanoseconds = cumulativeCPUTimeNanoseconds; self.physicalFootprintBytes = physicalFootprintBytes; self.cumulativeGPUTimeNanoseconds = cumulativeGPUTimeNanoseconds
+    init(pid: Int32, startTime: UInt64, groupID: String, name: String, processName: String? = nil, cumulativeCPUTimeNanoseconds: UInt64, physicalFootprintBytes: UInt64, cumulativeGPUTimeNanoseconds: UInt64? = nil) {
+        self.pid = pid; self.startTime = startTime; self.groupID = groupID; self.name = name; self.processName = processName ?? name; self.cumulativeCPUTimeNanoseconds = cumulativeCPUTimeNanoseconds; self.physicalFootprintBytes = physicalFootprintBytes; self.cumulativeGPUTimeNanoseconds = cumulativeGPUTimeNanoseconds
     }
 }
 struct ConsumerUsageReading: Equatable, Sendable { let monotonicNanoseconds: UInt64; let records: [ConsumerUsageRecord] }
@@ -17,11 +17,6 @@ struct ResourceConsumerCalculator: Sendable {
         var representativePID: Int32
         var value: UInt64
     }
-    private struct CPUAggregate: Sendable {
-        let aggregate: Aggregate
-        let percent: Double
-        let gpuPercent: Double?
-    }
     private var timestamp: UInt64?
     private var baselines: [Int32: Baseline] = [:]
 
@@ -32,10 +27,9 @@ struct ResourceConsumerCalculator: Sendable {
             timestamp = nil; baselines.removeAll()
             return .init(cpu: .unavailable, memory: .unavailable)
         }
-        let currentGroups = Dictionary(uniqueKeysWithValues: Self.metadata(for: reading.records).map { ($0.groupID, $0) })
         let memory: ResourceConsumerSection<ResourceConsumerMemoryEntry>
         if let memoryGroups = Self.aggregate(reading.records, value: \.physicalFootprintBytes) {
-            memory = .available(Array(memoryGroups.sorted(by: Self.aggregateOrder).prefix(3).map(Self.memoryEntry)))
+            memory = .available(Array(memoryGroups.sorted(by: Self.aggregateOrder).prefix(5).map(Self.memoryEntry)))
         } else {
             memory = .unavailable
         }
@@ -56,21 +50,17 @@ struct ResourceConsumerCalculator: Sendable {
             }
         }
         advanceBaselines(with: reading)
-        guard let cpuGroups = Self.aggregate(cpuDeltas.map(\.0), values: cpuDeltas.map(\.1)) else {
-            return .init(cpu: .unavailable, memory: memory)
-        }
-        let gpuGroups = Self.aggregate(gpuDeltas.map(\.0), values: gpuDeltas.map(\.1))
-        let gpuPercentByGroup = Dictionary(uniqueKeysWithValues: (gpuGroups ?? []).compactMap { group -> (String, Double)? in
-            let percent = Double(group.value) / Double(elapsed) * 100
+        let gpuPercentByPID = Dictionary(uniqueKeysWithValues: gpuDeltas.compactMap { record, value -> (Int32, Double)? in
+            let percent = Double(value) / Double(elapsed) * 100
             guard percent.isFinite, percent >= 0 else { return nil }
-            return (group.groupID, percent)
+            return (record.pid, percent)
         })
-        let cpuRows = cpuGroups.compactMap { group -> CPUAggregate? in
-            let percent = Double(group.value) / Double(elapsed) * 100
-            guard percent.isFinite, percent >= 0, let current = currentGroups[group.groupID] else { return nil }
-            return .init(aggregate: .init(groupID: group.groupID, name: group.name, representativePID: current.representativePID, value: group.value), percent: percent, gpuPercent: gpuPercentByGroup[group.groupID])
+        let cpuRows = cpuDeltas.compactMap { record, value -> ResourceConsumerCPUEntry? in
+            let percent = Double(value) / Double(elapsed) * 100
+            guard percent.isFinite, percent >= 0 else { return nil }
+            return .init(pid: record.pid, name: record.processName, percent: percent, gpuPercent: gpuPercentByPID[record.pid])
         }
-        let ranked = cpuRows.sorted(by: Self.cpuAggregateOrder).prefix(3).map { ResourceConsumerCPUEntry(pid: $0.aggregate.representativePID, name: $0.aggregate.name, percent: $0.percent, gpuPercent: $0.gpuPercent) }
+        let ranked = cpuRows.sorted(by: Self.computeOrder).prefix(5)
         return .init(cpu: ranked.isEmpty ? .measuring : .available(Array(ranked)), memory: memory)
     }
     private mutating func advanceBaselines(with reading: ConsumerUsageReading) {
@@ -81,23 +71,11 @@ struct ResourceConsumerCalculator: Sendable {
     private static func validateGroups(_ records: [ConsumerUsageRecord]) -> Bool {
         var names: [String: String] = [:]
         for record in records {
-            guard !record.groupID.isEmpty, !record.name.isEmpty else { return false }
+            guard !record.groupID.isEmpty, !record.name.isEmpty, !record.processName.isEmpty else { return false }
             if let name = names[record.groupID], name != record.name { return false }
             names[record.groupID] = record.name
         }
         return true
-    }
-    private static func metadata(for records: [ConsumerUsageRecord]) -> [Aggregate] {
-        var metadata: [String: Aggregate] = [:]
-        for record in records {
-            if var existing = metadata[record.groupID] {
-                existing.representativePID = min(existing.representativePID, record.pid)
-                metadata[record.groupID] = existing
-            } else {
-                metadata[record.groupID] = .init(groupID: record.groupID, name: record.name, representativePID: record.pid, value: 0)
-            }
-        }
-        return Array(metadata.values)
     }
     private static func aggregate(_ records: [ConsumerUsageRecord], values: [UInt64]) -> [Aggregate]? {
         guard records.count == values.count else { return nil }
@@ -120,9 +98,9 @@ struct ResourceConsumerCalculator: Sendable {
     private static func memoryEntry(_ group: Aggregate) -> ResourceConsumerMemoryEntry { .init(pid: group.representativePID, name: group.name, physicalFootprintBytes: group.value) }
     private static func nameOrder(_ lhs: String, _ rhs: String) -> Bool { lhs.unicodeScalars.lexicographicallyPrecedes(rhs.unicodeScalars) }
     private static func aggregateOrder(_ lhs: Aggregate, _ rhs: Aggregate) -> Bool { lhs.value != rhs.value ? lhs.value > rhs.value : lhs.name != rhs.name ? nameOrder(lhs.name, rhs.name) : lhs.groupID < rhs.groupID }
-    private static func cpuAggregateOrder(_ lhs: CPUAggregate, _ rhs: CPUAggregate) -> Bool {
-        let lhsGPU = lhs.gpuPercent ?? 0
-        let rhsGPU = rhs.gpuPercent ?? 0
-        return lhsGPU != rhsGPU ? lhsGPU > rhsGPU : lhs.percent != rhs.percent ? lhs.percent > rhs.percent : lhs.aggregate.name != rhs.aggregate.name ? nameOrder(lhs.aggregate.name, rhs.aggregate.name) : lhs.aggregate.groupID < rhs.aggregate.groupID
+    private static func computeOrder(_ lhs: ResourceConsumerCPUEntry, _ rhs: ResourceConsumerCPUEntry) -> Bool {
+        // Max keeps the largest load visible regardless of the unit carrying it.
+        let lhsLoad = max(lhs.percent, lhs.gpuPercent ?? 0); let rhsLoad = max(rhs.percent, rhs.gpuPercent ?? 0)
+        return lhsLoad != rhsLoad ? lhsLoad > rhsLoad : lhs.percent != rhs.percent ? lhs.percent > rhs.percent : lhs.name != rhs.name ? nameOrder(lhs.name, rhs.name) : lhs.pid < rhs.pid
     }
 }

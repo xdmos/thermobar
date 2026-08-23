@@ -7,17 +7,18 @@ import Testing
 }
 
 @Test func resourceConsumerPresentationShowsGPUAndCPUWithoutInventingGPUData() {
-    #expect(ResourceConsumerPresentation.compute(cpu: 6, gpu: 82) == "GPU 82% · CPU 6%")
-    #expect(ResourceConsumerPresentation.compute(cpu: 6, gpu: nil) == "GPU — · CPU 6%")
+    // The panel renders CPU and GPU as two reserved columns, so each value has
+    // to stay short enough to fit its column on a single line.
+    #expect(ResourceConsumerPresentation.cpu(6) == "6%")
+    #expect(ResourceConsumerPresentation.gpu(82) == "82%")
+    #expect(ResourceConsumerPresentation.gpu(nil) == "—")
+    #expect(ResourceConsumerPresentation.computeAccessibility(rank: 1, name: "Codex Renderer", cpu: 116, gpu: nil, locale: Locale(identifier: "en_US")) == "Rank 1, Codex Renderer, CPU 116%, GPU —")
 }
 
-@Test func resourceConsumerPresentationSeparatesGPUAndCPUForNarrowPanelRows() {
-    #expect(ResourceConsumerPresentation.computeDetails(cpu: 6, gpu: 82) == .init(gpu: "GPU 82%", cpu: "CPU 6%"))
-    #expect(ResourceConsumerPresentation.computeDetails(cpu: 6, gpu: nil) == .init(gpu: "GPU —", cpu: "CPU 6%"))
-}
-
-@Test func resourceConsumerPresentationKeepsRAMValueAsItsOwnDetailLine() {
-    #expect(ResourceConsumerPresentation.memoryDetail(6_833 * 1_024 * 1_024, locale: Locale(identifier: "en_US")) == "6.7 GB")
+@Test func resourceConsumerPresentationKeepsRAMValueShortEnoughForItsTrailingColumn() {
+    // The RAM row is a single line with a trailing-aligned value column, so the
+    // formatted value has to stay a compact "<number> <unit>" pair.
+    #expect(ResourceConsumerPresentation.memory(6_833 * 1_024 * 1_024, locale: Locale(identifier: "en_US")) == "6.7 GB")
 }
 
 @Test func resourceConsumerPresentationUsesBinaryMemoryUnits() {

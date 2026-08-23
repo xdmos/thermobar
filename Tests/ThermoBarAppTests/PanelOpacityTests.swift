@@ -134,7 +134,7 @@ import Testing
     let catalog = try String(contentsOf: catalogURL, encoding: .utf8)
 
     #expect(catalog.contains("\"setting.visible-in-panel\""))
-    #expect(catalog.contains("\"value\" : \"CPU/GPU\""))
+    #expect(catalog.contains("\"value\" : \"Procesy CPU/GPU\""))
     #expect(catalog.contains("\"value\" : \"RAM\""))
     #expect(catalog.contains("\"accessibility.show-compute-consumers\""))
     #expect(catalog.contains("\"accessibility.show-memory-consumers\""))

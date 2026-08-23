@@ -18,10 +18,6 @@ private struct RankedConsumerRow<Row>: Identifiable {
 }
 
 enum ResourceConsumerPresentation {
-    struct ComputeDetails: Equatable {
-        let gpu: String
-        let cpu: String
-    }
     // Keep these catalog keys visible to the string-catalog compiler. The actual
     // lookup below chooses the caller's lproj bundle before formatting.
     private static let cpuAccessibilityCatalogKey = String(localized: "consumer.cpu-accessibility", defaultValue: "Rank %lld, %@, CPU, %@", bundle: .module)
@@ -35,12 +31,7 @@ enum ResourceConsumerPresentation {
         let formatter = NumberFormatter(); formatter.locale = locale; formatter.maximumFractionDigits = 1; formatter.minimumFractionDigits = 0
         return "\(formatter.string(from: NSNumber(value: amount)) ?? "—") \(units[index])"
     }
-    static func memoryDetail(_ bytes: UInt64, locale: Locale = .current) -> String { memory(bytes, locale: locale) }
-    static func computeDetails(cpu: Double, gpu: Double?) -> ComputeDetails { .init(gpu: "GPU \(gpu.map(Self.cpu) ?? "—")", cpu: "CPU \(Self.cpu(cpu))") }
-    static func compute(cpu: Double, gpu: Double?) -> String {
-        let details = computeDetails(cpu: cpu, gpu: gpu)
-        return "\(details.gpu) · \(details.cpu)"
-    }
+    static func gpu(_ value: Double?) -> String { value.map(Self.cpu) ?? "—" }
     static func accessibility(rank: Int, name: String, resource: String, value: String, locale: Locale = .current) -> String {
         // `String(localized:locale:)` follows the app's preferred languages. Select
         // the matching .lproj bundle first so previews and presentation tests can
@@ -59,13 +50,19 @@ enum ResourceConsumerPresentation {
         let language = locale.language.languageCode?.identifier ?? "en"
         let bundle = Bundle.module.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .module
         let format = bundle.localizedString(forKey: "consumer.compute-accessibility", value: Self.computeAccessibilityCatalogKey, table: nil)
-        return String(format: format, locale: locale, rank, name, gpu.map(Self.cpu) ?? "—", Self.cpu(cpu))
+        return String(format: format, locale: locale, rank, name, Self.cpu(cpu), gpu.map(Self.cpu) ?? "—")
     }
 }
 
 struct ResourceConsumerList: View {
     let metric: ResourceConsumerMetric
     let visibility: ResourceConsumerVisibility
+    // The panel is only 260 points wide, so the process rows need reserved
+    // numeric columns. Without them the CPU and GPU values wrap onto a second
+    // line and every row ends up a different height.
+    @ScaledMetric(relativeTo: .body) private var rankColumnWidth: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var valueColumnWidth: CGFloat = 38
+    @ScaledMetric(relativeTo: .body) private var memoryColumnWidth: CGFloat = 54
 
     init(metric: ResourceConsumerMetric, visibility: ResourceConsumerVisibility = .all) {
         self.metric = metric
@@ -91,7 +88,7 @@ struct ResourceConsumerList: View {
             EmptyView()
         case let .available(rows) where !rows.isEmpty:
             VStack(alignment: .leading, spacing: 5) {
-                Text(ThermoBarCopy.consumerMemoryTitle).font(.body.weight(.semibold)).foregroundStyle(.secondary)
+                Text(ThermoBarCopy.consumerMemoryTitle).font(.body.bold()).foregroundStyle(.primary).textCase(.uppercase)
                 ForEach(rows.enumerated().map { RankedConsumerRow(index: $0.offset, row: $0.element, id: $0.element.pid) }) { ranked in
                     memoryRow(rank: ranked.index + 1, row: ranked.row)
                 }
@@ -108,7 +105,7 @@ struct ResourceConsumerList: View {
             EmptyView()
         case let .available(rows) where !rows.isEmpty:
             VStack(alignment: .leading, spacing: 5) {
-                Text(ThermoBarCopy.consumerComputeTitle).font(.body.weight(.semibold)).foregroundStyle(.secondary)
+                computeHeader
                 ForEach(rows.enumerated().map { RankedConsumerRow(index: $0.offset, row: $0.element, id: $0.element.pid) }) { ranked in
                     computeRow(rank: ranked.index + 1, row: ranked.row)
                 }
@@ -124,7 +121,7 @@ struct ResourceConsumerList: View {
             EmptyView()
         } else {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.body.weight(.semibold)).foregroundStyle(.secondary)
+            Text(title).font(.body.bold()).foregroundStyle(.primary).textCase(.uppercase)
             switch state {
             case .available(let rows) where !rows.isEmpty:
                 ForEach(rows.enumerated().map { RankedConsumerRow(index: $0.offset, row: $0.element, id: $0.element[keyPath: id]) }) { ranked in
@@ -144,40 +141,54 @@ struct ResourceConsumerList: View {
     }
     private func rowView(rank: Int, name: String, value: String, resource: String) -> some View {
         HStack(spacing: 6) {
-            Text("\(rank)").foregroundStyle(.tertiary).frame(width: 10, alignment: .leading)
-            Text(verbatim: name).lineLimit(1).truncationMode(.tail)
+            Text("\(rank)").foregroundStyle(.tertiary).frame(width: rankColumnWidth, alignment: .leading)
+            Text(verbatim: name).lineLimit(1).truncationMode(.tail).help(Text(verbatim: name))
             Spacer(minLength: 4)
-            Text(verbatim: value).font(.body.monospacedDigit()).foregroundStyle(.secondary)
+            Text(verbatim: value).font(.body.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
         }
         .font(.body).accessibilityElement(children: .ignore).accessibilityLabel(ResourceConsumerPresentation.accessibility(rank: rank, name: name, resource: resource, value: value))
     }
+    private var computeHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(ThermoBarCopy.consumerComputeTitle).font(.body.bold()).foregroundStyle(.primary).textCase(.uppercase)
+            Spacer(minLength: 4)
+            computeColumns(cpu: "CPU", gpu: "GPU")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+    }
+    private func computeColumns(cpu: String, gpu: String) -> some View {
+        HStack(spacing: 6) {
+            Text(verbatim: cpu).frame(width: valueColumnWidth, alignment: .trailing)
+            Text(verbatim: gpu).frame(width: valueColumnWidth, alignment: .trailing)
+        }
+        .lineLimit(1)
+    }
     private func computeRow(rank: Int, row: ResourceConsumerCPUEntry) -> some View {
-        let details = ResourceConsumerPresentation.computeDetails(cpu: row.percent, gpu: row.gpuPercent)
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text("\(rank)").foregroundStyle(.tertiary).frame(width: 10, alignment: .leading)
-                Text(verbatim: row.name).lineLimit(1).truncationMode(.tail)
-            }
-            Text(verbatim: "\(details.gpu)  ·  \(details.cpu)")
+        HStack(spacing: 6) {
+            Text("\(rank)").foregroundStyle(.tertiary).frame(width: rankColumnWidth, alignment: .leading)
+            Text(verbatim: row.name).lineLimit(1).truncationMode(.tail).help(Text(verbatim: row.name))
+            Spacer(minLength: 4)
+            computeColumns(cpu: ResourceConsumerPresentation.cpu(row.percent), gpu: ResourceConsumerPresentation.gpu(row.gpuPercent))
                 .font(.body.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .padding(.leading, 16)
         }
         .font(.body)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(ResourceConsumerPresentation.computeAccessibility(rank: rank, name: row.name, cpu: row.percent, gpu: row.gpuPercent))
     }
     private func memoryRow(rank: Int, row: ResourceConsumerMemoryEntry) -> some View {
-        let value = ResourceConsumerPresentation.memoryDetail(row.physicalFootprintBytes)
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text("\(rank)").foregroundStyle(.tertiary).frame(width: 10, alignment: .leading)
-                Text(verbatim: row.name).lineLimit(1).truncationMode(.tail)
-            }
+        let value = ResourceConsumerPresentation.memory(row.physicalFootprintBytes)
+        return HStack(spacing: 6) {
+            Text("\(rank)").foregroundStyle(.tertiary).frame(width: rankColumnWidth, alignment: .leading)
+            Text(verbatim: row.name).lineLimit(1).truncationMode(.tail).help(Text(verbatim: row.name))
+            Spacer(minLength: 4)
             Text(verbatim: value)
                 .font(.body.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .padding(.leading, 16)
+                .lineLimit(1)
+                .frame(width: memoryColumnWidth, alignment: .trailing)
         }
         .font(.body)
         .accessibilityElement(children: .ignore)

@@ -101,7 +101,7 @@ func liveReaderReturnsOnlySafeRecordsWhenEnabled() {
     }
     #expect(reading.monotonicNanoseconds > 0)
     #expect(Set(reading.records.map(\.pid)).count == reading.records.count)
-    #expect(reading.records.allSatisfy { $0.pid > 0 && !$0.name.isEmpty })
+    #expect(reading.records.allSatisfy { $0.pid > 0 && !$0.name.isEmpty && !$0.processName.isEmpty })
 }
 
 @Test func readerUsesOutermostAppBundleAndLexicallyNormalizesNestedHelpers() {
@@ -110,7 +110,7 @@ func liveReaderReturnsOnlySafeRecordsWhenEnabled() {
         usage: { _ in .init(user: 2, system: 3, footprint: 4, startTime: 5) }, shortName: { _ in "ignored" },
         path: { _ in "/Applications/./Google Chrome.app/Contents/Frameworks/Google Chrome Helper.app/Contents/MacOS/../MacOS/Google Chrome Helper" }, clock: { 99 }
     ))
-    #expect(reader.read()?.records == [.init(pid: 42, startTime: 5, groupID: "app:/Applications/Google Chrome.app", name: "Google Chrome", cumulativeCPUTimeNanoseconds: 5, physicalFootprintBytes: 4)])
+    #expect(reader.read()?.records == [.init(pid: 42, startTime: 5, groupID: "app:/Applications/Google Chrome.app", name: "Google Chrome", processName: "Google Chrome Helper", cumulativeCPUTimeNanoseconds: 5, physicalFootprintBytes: 4)])
 }
 
 @Test func readerSeparatesMissingPathsByPIDAndStartTime() {
