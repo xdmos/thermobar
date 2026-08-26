@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftUI
 import Testing
 @testable import ThermoBar
@@ -146,12 +147,19 @@ import Testing
         presentation: ThermoBarPresentation(snapshot: nil, mode: .visible, nowNanoseconds: 1),
         sensorStatus: .waiting,
         resourceConsumerVisibility: .all,
+        iconProvider: PanelOpacityFakeIconProvider(),
+        openActivityMonitor: {},
         background: background,
         reduceMotion: false,
         onClose: nil
     )
 
     #expect(content.background.contrast == .standard)
+}
+
+@MainActor
+private final class PanelOpacityFakeIconProvider: ApplicationIconProviding {
+    func icon(for path: String?) -> NSImage? { nil }
 }
 
 @Test @MainActor func consumerVisibilityControlsTheFooterWithoutSuppressingWarnings() {

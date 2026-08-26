@@ -64,8 +64,8 @@ struct FloatingPanelContent: View {
         presentation: ThermoBarPresentation,
         sensorStatus: ThermoBarPresentation.SensorStatus,
         resourceConsumerVisibility: ResourceConsumerVisibility,
-        iconProvider: any ApplicationIconProviding = PreviewFixtures.iconStore,
-        openActivityMonitor: @escaping () -> Void = PreviewFixtures.openActivityMonitor,
+        iconProvider: any ApplicationIconProviding,
+        openActivityMonitor: @escaping () -> Void,
         background: FloatingPanelBackground,
         reduceMotion: Bool,
         onClose: (() -> Void)?
