@@ -2,16 +2,18 @@ import ThermoBarCore
 
 enum PreviewFixtures {
     static let nowNanoseconds: UInt64 = 1_000_000_000_000
+    @MainActor static let iconStore = ApplicationIconStore()
+    @MainActor static let openActivityMonitor: () -> Void = {}
     static let resourceConsumers = ResourceConsumerMetric(
         cpu: .available([
-            .init(pid: 1, name: "Preview Browser with a deliberately long process name", percent: 137, gpuPercent: 22),
-            .init(pid: 2, name: "Local Model", percent: 84, gpuPercent: 71),
-            .init(pid: 3, name: "WindowServer", percent: 22, gpuPercent: 12)
+            .init(pid: 1, name: "Preview Browser with a deliberately long process name", percent: 137, gpuPercent: 22, iconPath: "/System/Applications/Safari.app"),
+            .init(pid: 2, name: "Local Model", percent: 84, gpuPercent: 71, iconPath: nil),
+            .init(pid: 3, name: "WindowServer", percent: 22, gpuPercent: 12, iconPath: "/System/Applications/Utilities/Terminal.app")
         ]),
         memory: .available([
-            .init(pid: 1, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 1_800 * 1_024 * 1_024),
-            .init(pid: 2, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 620 * 1_024 * 1_024),
-            .init(pid: 3, name: "WindowServer", physicalFootprintBytes: 410 * 1_024 * 1_024)
+            .init(pid: 1, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 1_800 * 1_024 * 1_024, iconPath: "/System/Applications/Safari.app"),
+            .init(pid: 2, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 620 * 1_024 * 1_024, iconPath: "/System/Applications/Safari.app"),
+            .init(pid: 3, name: "WindowServer", physicalFootprintBytes: 410 * 1_024 * 1_024, iconPath: "/System/Applications/Utilities/Terminal.app")
         ])
     )
 

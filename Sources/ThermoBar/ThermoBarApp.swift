@@ -5,14 +5,18 @@ import ThermoBarCore
 @main
 struct ThermoBarApp: App {
     @State private var model: AppModel
+    @State private var iconStore: ApplicationIconStore
     private let workspaceLifecycle: WorkspaceLifecycle
     private let frameStore: PanelFrameStore
+    private let activityMonitorLauncher: ActivityMonitorLauncher
 
     init() {
         let systemIdentity = SystemIdentity.current()
         let appModel = AppModel(model: systemIdentity.model, build: systemIdentity.build)
         _model = State(initialValue: appModel)
+        _iconStore = State(initialValue: ApplicationIconStore())
         frameStore = PanelFrameStore()
+        activityMonitorLauncher = ActivityMonitorLauncher()
         workspaceLifecycle = WorkspaceLifecycle { [weak appModel] event in
             Task { @MainActor [weak appModel] in
                 await appModel?.handleLifecycleEvent(event)
@@ -33,7 +37,12 @@ struct ThermoBarApp: App {
         .menuBarExtraStyle(.window)
 
         Window("ThermoBar", id: "floating-panel") {
-            FloatingPanelSceneContent(model: model, frameStore: frameStore)
+            FloatingPanelSceneContent(
+                model: model,
+                frameStore: frameStore,
+                iconProvider: iconStore,
+                openActivityMonitor: activityMonitorLauncher.open
+            )
         }
         .windowLevel(.floating)
         .windowStyle(.hiddenTitleBar)
@@ -50,6 +59,8 @@ struct ThermoBarApp: App {
 private struct FloatingPanelSceneContent: View {
     let model: AppModel
     let frameStore: PanelFrameStore
+    let iconProvider: any ApplicationIconProviding
+    let openActivityMonitor: () -> Void
 
     @Environment(\.dismissWindow) private var dismissWindow
 
@@ -62,6 +73,8 @@ private struct FloatingPanelSceneContent: View {
                 showCompute: model.showComputeConsumers,
                 showMemory: model.showMemoryConsumers
             ),
+            iconProvider: iconProvider,
+            openActivityMonitor: openActivityMonitor,
             onClose: {
                 dismissWindow(id: "floating-panel")
                 model.setPanelVisibilityIntent(false)

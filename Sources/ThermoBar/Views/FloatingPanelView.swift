@@ -11,16 +11,20 @@ struct FloatingPanelView: View {
     private let nowNanoseconds: UInt64?
     private let diagnostics: [SamplingDiagnostic]
     private let resourceConsumerVisibility: ResourceConsumerVisibility
+    private let iconProvider: any ApplicationIconProviding
+    private let openActivityMonitor: () -> Void
     private let accessibilityOverride: PreviewAccessibilityOverride?
     private let onClose: (() -> Void)?
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
-    init(snapshot: SystemSnapshot?, mode: SamplingMode, diagnostics: [SamplingDiagnostic] = [], resourceConsumerVisibility: ResourceConsumerVisibility = .all, nowNanoseconds: UInt64? = nil, accessibilityOverride: PreviewAccessibilityOverride? = nil, onClose: (() -> Void)? = nil) {
+    init(snapshot: SystemSnapshot?, mode: SamplingMode, diagnostics: [SamplingDiagnostic] = [], resourceConsumerVisibility: ResourceConsumerVisibility = .all, iconProvider: any ApplicationIconProviding, openActivityMonitor: @escaping () -> Void, nowNanoseconds: UInt64? = nil, accessibilityOverride: PreviewAccessibilityOverride? = nil, onClose: (() -> Void)? = nil) {
         self.snapshot = snapshot
         self.mode = mode
         self.diagnostics = diagnostics
         self.resourceConsumerVisibility = resourceConsumerVisibility
+        self.iconProvider = iconProvider
+        self.openActivityMonitor = openActivityMonitor
         self.nowNanoseconds = nowNanoseconds
         self.accessibilityOverride = accessibilityOverride
         self.onClose = onClose
@@ -32,6 +36,8 @@ struct FloatingPanelView: View {
                 presentation: ThermoBarPresentation(snapshot: snapshot, mode: mode, nowNanoseconds: now),
                 sensorStatus: ThermoBarPresentation.sensorStatus(snapshot: snapshot, diagnostics: diagnostics),
                 resourceConsumerVisibility: resourceConsumerVisibility,
+                iconProvider: iconProvider,
+                openActivityMonitor: openActivityMonitor,
                 background: FloatingPanelBackground(contrast: effectiveContrast),
                 reduceMotion: effectiveReduceMotion,
                 onClose: onClose
@@ -47,10 +53,32 @@ struct FloatingPanelContent: View {
     let presentation: ThermoBarPresentation
     let sensorStatus: ThermoBarPresentation.SensorStatus
     let resourceConsumerVisibility: ResourceConsumerVisibility
+    let iconProvider: any ApplicationIconProviding
+    let openActivityMonitor: () -> Void
     let background: FloatingPanelBackground
     let reduceMotion: Bool
     let onClose: (() -> Void)?
     @ScaledMetric(relativeTo: .title2) private var hotspotFontSize = 32
+
+    init(
+        presentation: ThermoBarPresentation,
+        sensorStatus: ThermoBarPresentation.SensorStatus,
+        resourceConsumerVisibility: ResourceConsumerVisibility,
+        iconProvider: any ApplicationIconProviding = PreviewFixtures.iconStore,
+        openActivityMonitor: @escaping () -> Void = PreviewFixtures.openActivityMonitor,
+        background: FloatingPanelBackground,
+        reduceMotion: Bool,
+        onClose: (() -> Void)?
+    ) {
+        self.presentation = presentation
+        self.sensorStatus = sensorStatus
+        self.resourceConsumerVisibility = resourceConsumerVisibility
+        self.iconProvider = iconProvider
+        self.openActivityMonitor = openActivityMonitor
+        self.background = background
+        self.reduceMotion = reduceMotion
+        self.onClose = onClose
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -162,7 +190,13 @@ struct FloatingPanelContent: View {
         .accessibilityElement(children: .combine)
         }
         if resourceConsumerVisibility.showsAny {
-            ResourceConsumerList(metric: presentation.resourceConsumers, visibility: resourceConsumerVisibility)
+            ResourceConsumerList(
+                metric: presentation.resourceConsumers,
+                summary: presentation.resourceConsumerSummary,
+                visibility: resourceConsumerVisibility,
+                iconProvider: iconProvider,
+                openActivityMonitor: openActivityMonitor
+            )
         }
         }
     }
@@ -268,6 +302,10 @@ struct ThermoBarPresentation {
     let fanFraction: Double?
     let thermalTint: Color
     let resourceConsumers: ResourceConsumerMetric
+
+    var resourceConsumerSummary: ResourceConsumerSummary {
+        .init(cpu: cpuLoad, gpu: gpuLoad, memory: memoryDetail)
+    }
 
     init(snapshot: SystemSnapshot?, mode: SamplingMode, nowNanoseconds: UInt64) {
         guard let snapshot,
@@ -525,28 +563,28 @@ enum ThermoBarCopy {
 }
 
 #Preview("Początkowy pomiar", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 360)) {
-    FloatingPanelView(snapshot: nil, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+    FloatingPanelView(snapshot: nil, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
 #Preview("Pomiar CPU i RAM", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 430)) {
-    FloatingPanelView(snapshot: PreviewFixtures.measuring, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+    FloatingPanelView(snapshot: PreviewFixtures.measuring, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
 #Preview("Rankingi procesów", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
-    FloatingPanelView(snapshot: PreviewFixtures.nominal, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+    FloatingPanelView(snapshot: PreviewFixtures.nominal, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
         .preferredColorScheme(.dark)
 }
 
 #Preview("Brak danych procesów", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 430)) {
-    FloatingPanelView(snapshot: PreviewFixtures.unavailable, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+    FloatingPanelView(snapshot: PreviewFixtures.unavailable, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
 #Preview("Stan poważny", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
-    FloatingPanelView(snapshot: PreviewFixtures.serious, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+    FloatingPanelView(snapshot: PreviewFixtures.serious, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
 #Preview("Nieaktualne dane", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
-    FloatingPanelView(snapshot: PreviewFixtures.stale, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds)
+    FloatingPanelView(snapshot: PreviewFixtures.stale, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
 #Preview("Nieobsługiwany schemat", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
@@ -554,6 +592,8 @@ enum ThermoBarCopy {
         snapshot: PreviewFixtures.unsupportedSchema,
         mode: .visible,
         diagnostics: [.init(source: .cpuTemperature, error: .unsupportedPrivateMetricSchema, consecutiveFailures: 3)],
+        iconProvider: PreviewFixtures.iconStore,
+        openActivityMonitor: PreviewFixtures.openActivityMonitor,
         nowNanoseconds: PreviewFixtures.nowNanoseconds
     )
 }
@@ -563,18 +603,20 @@ enum ThermoBarCopy {
         snapshot: PreviewFixtures.partialSensorFailure,
         mode: .visible,
         diagnostics: [.init(source: .cpuTemperature, error: .missingExpectedKey("Tp0m"), consecutiveFailures: 3)],
+        iconProvider: PreviewFixtures.iconStore,
+        openActivityMonitor: PreviewFixtures.openActivityMonitor,
         nowNanoseconds: PreviewFixtures.nowNanoseconds
     )
 }
 
 #Preview("Jasny tryb i większy kontrast", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 310)) {
-    FloatingPanelView(snapshot: PreviewFixtures.nominal, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds,
+    FloatingPanelView(snapshot: PreviewFixtures.nominal, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds,
         accessibilityOverride: .init(contrast: .increased, reduceMotion: false))
         .preferredColorScheme(.light)
 }
 
 #Preview("Duży tekst i ograniczony ruch", traits: .fixedLayout(width: 320, height: 440)) {
-    FloatingPanelView(snapshot: PreviewFixtures.serious, mode: .visible, nowNanoseconds: PreviewFixtures.nowNanoseconds,
+    FloatingPanelView(snapshot: PreviewFixtures.serious, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds,
         accessibilityOverride: .init(contrast: .standard, reduceMotion: true))
         .dynamicTypeSize(.accessibility3)
 }

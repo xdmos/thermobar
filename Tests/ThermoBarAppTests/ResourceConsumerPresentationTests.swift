@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import ThermoBar
 
@@ -46,4 +47,36 @@ import Testing
 @Test func resourceConsumerPresentationHasDeterministicBinaryUnits() {
     #expect(ResourceConsumerPresentation.memory(620 * 1_024 * 1_024, locale: Locale(identifier: "en_US")) == "620 MB")
     #expect(ResourceConsumerPresentation.memory(1_800 * 1_024 * 1_024, locale: Locale(identifier: "pl_PL")) == "1,8 GB")
+}
+
+@Test func resourceConsumerSummaryFormatsTheApprovedSectionHeaders() {
+    let summary = ResourceConsumerSummary(cpu: "18%", gpu: "7%", memory: "69%")
+    #expect(summary.compute == "CPU 18% · GPU 7%")
+    #expect(summary.memory == "69%")
+}
+
+@Test func activityMonitorButtonIncludesTheRowNameInBothLanguages() {
+    #expect(ResourceConsumerPresentation.openActivityMonitor(name: "Finder", locale: Locale(identifier: "pl_PL")) == "Otwórz Monitor aktywności — Finder")
+    #expect(ResourceConsumerPresentation.openActivityMonitor(name: "Finder", locale: Locale(identifier: "en_US")) == "Open Activity Monitor — Finder")
+}
+
+@Test func maximumConsumerColumnsLeaveAReadableNameAtTwoHundredThirtyTwoPoints() {
+    #expect(ResourceConsumerRowLayout.contentWidth == 232)
+    #expect(ResourceConsumerRowLayout.maximumComputeNameWidth >= 70)
+    #expect(ResourceConsumerRowLayout.maximumMemoryNameWidth >= 90)
+    #expect(ResourceConsumerRowLayout.maximumDynamicTypeSize == .xxxLarge)
+}
+
+@Test func thermobarPresentationPublishesConsumerHeaderSummariesFromTheSnapshot() {
+    let presentation = ThermoBarPresentation(
+        snapshot: PreviewFixtures.nominal,
+        mode: .visible,
+        nowNanoseconds: PreviewFixtures.nowNanoseconds
+    )
+
+    #expect(presentation.resourceConsumerSummary == .init(
+        cpu: "26%",
+        gpu: "19%",
+        memory: "50%"
+    ))
 }

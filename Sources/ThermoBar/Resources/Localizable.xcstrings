@@ -5,6 +5,7 @@
     "accessibility.show-compute-consumers" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Pokaż listę procesów CPU/GPU" } }, "en" : { "stringUnit" : { "state" : "translated", "value" : "Show CPU/GPU process list" } } } },
     "accessibility.show-memory-consumers" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Pokaż aplikację z największym użyciem RAM" } }, "en" : { "stringUnit" : { "state" : "translated", "value" : "Show app with highest RAM usage" } } } },
     "action.hide-panel" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Ukryj panel" } } } },
+    "action.open-activity-monitor" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Otwórz Monitor aktywności — %@" } }, "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Activity Monitor — %@" } } } },
     "action.open-login-items" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Otwórz elementy logowania" } } } },
     "action.quit" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Zakończ ThermoBar" } } } },
     "action.retry-sensors" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Ponów odczyt czujników" } } } },
