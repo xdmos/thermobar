@@ -59,6 +59,12 @@ RAM bez wykonywania operacji na plikach. Wszystkie rekordy tej samej grupy RAM
 muszą wskazywać tę samą tożsamość ikony; konflikt unieważnia odczyt grupy zamiast
 wybierać przypadkową ikonę.
 
+Konflikt tożsamości ikony w jednej grupie oznacza niedostępność całej sekcji RAM
+w danej próbce. Nie unieważnia sekcji `Procesy` i nie zeruje bazowych liczników
+CPU/GPU, ponieważ ścieżka ikony nie wpływa na wiarygodność pomiaru obciążenia.
+Kalkulator nadal przesuwa bazę CPU/GPU zgodnie z bieżącą próbką. Następna próbka
+z jednoznacznymi ścieżkami samoczynnie przywraca sekcję RAM.
+
 W celu zachowania zgodności źródłowej publiczne inicjalizatory wpisów otrzymują
 opcjonalną ścieżkę z domyślną wartością `nil`. Ranking, sortowanie, wartości i
 limity pozostają niezmienione.
@@ -67,13 +73,21 @@ limity pozostają niezmienione.
 
 Warstwa aplikacji ThermoBar zamienia ścieżkę na ikonę przez `NSWorkspace`.
 Odpowiedzialność jest zamknięta w małym dostawcy ikon wstrzykiwanym do widoku.
-Dostawca buforuje wynik według ścieżki, aby cykliczne odświeżenia pomiarów nie
-powodowały kolejnych odczytów z dysku.
+Dostawca jest klasą izolowaną przez `@MainActor`; nie ma zgodności `Sendable` i
+nigdy nie opuszcza głównego aktora razem z przechowywanymi obiektami `NSImage`.
+Jedna instancja jest własnością głównej sceny `ThermoBarApp`, utrzymywaną przez
+`@State` przez cały czas życia aplikacji i przekazywaną jawnie przez hierarchię
+widoków do `ResourceConsumerList`. Dzięki temu rekonstrukcja widoku przy nowej
+próbce nie odtwarza cache. Dostawca buforuje wynik według ścieżki w `NSCache`,
+aby cykliczne odświeżenia pomiarów nie powodowały kolejnych odczytów z dysku.
 
-Brak ścieżki, nieistniejący plik lub błąd rozpoznania nie ukrywa wiersza. Widok
-pokazuje wtedy neutralny symbol systemowy dla pliku wykonywalnego. Procesy
-pomocnicze, takie jak przeglądarkowe helpery, używają ikony zewnętrznej aplikacji,
-ale zachowują własną nazwę procesu w sekcji `Procesy`.
+Brak ścieżki albo nieistniejący plik nie ukrywa wiersza. Widok pokazuje wtedy
+neutralny symbol systemowy dla pliku wykonywalnego. Dla istniejącej ścieżki
+akceptuje ikonę zwróconą przez `NSWorkspace`, także gdy macOS wybierze ikonę
+ogólną; ThermoBar nie porównuje obrazów ani nie próbuje rozpoznawać systemowej
+ikony domyślnej. Procesy pomocnicze, takie jak przeglądarkowe helpery, używają
+ikony zewnętrznej aplikacji, ale zachowują własną nazwę procesu w sekcji
+`Procesy`.
 
 ## Metryki nagłówków
 
@@ -103,8 +117,15 @@ nie wpływa na pomiary ani stan listy.
   wartości, mimo że numer rankingu nie jest widoczny.
 - Przycisk ma osobny fokus klawiatury, podpowiedź oraz etykietę
   `Otwórz Monitor aktywności — <nazwa>`.
-- Kolumny liczbowe i ikona skalują się z tekstem w granicach pozwalających
-  zachować jedną linię przy panelu szerokości 260 punktów.
+- Lista respektuje Dynamic Type do rozmiaru `xxxLarge`. Dla większego ustawienia
+  środowisko samej listy jest ograniczone do `xxxLarge`, ponieważ zatwierdzony
+  jednowierszowy układ i stała szerokość 260 punktów nie mogą jednocześnie
+  pomieścić nieograniczonego skalowania. Pozostała część panelu zachowuje własne
+  dotychczasowe skalowanie.
+- Ikona skaluje się od 22 do maksymalnie 26 punktów. Kolumny CPU/GPU oraz RAM
+  korzystają z `@ScaledMetric`, lecz ich obliczone szerokości są ograniczone do
+  wartości potwierdzonych testem układu dla `xxxLarge`. Przycisk akcji pozostaje
+  stały i ma co najmniej 20 punktów.
 - Skracana jest wyłącznie nazwa procesu lub aplikacji; wartości i przycisk nie
   mogą się zawijać ani znikać.
 - Istniejący tryb zwiększonego kontrastu i ograniczenia ruchu pozostaje
@@ -126,6 +147,8 @@ Testy aplikacji obejmą:
 - zachowanie etykiet dostępności po usunięciu widocznych numerów;
 - wywołanie jednej wstrzykniętej akcji przez przyciski obu sekcji;
 - stabilny układ wartości, ikon i akcji przy szerokości panelu 260 punktów;
+- zachowanie jednego wiersza przy rozmiarach od domyślnego do `xxxLarge` oraz
+  zastosowanie ustalonego ograniczenia dla większego Dynamic Type;
 - awaryjną ikonę dla brakującej lub nierozpoznanej ścieżki.
 
 Końcowa weryfikacja obejmie pełne `swift test`, release build, istniejący audyt
