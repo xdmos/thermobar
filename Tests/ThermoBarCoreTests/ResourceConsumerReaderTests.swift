@@ -25,7 +25,7 @@ import Darwin
 
 @Test func readerFallsBackToPathAndSkipsOverflow() {
     let reader = ResourceConsumerReader(dependencies: .init(count: { 2 }, fill: { pointer, _ in pointer?.assumingMemoryBound(to: Int32.self)[0] = 1; pointer?.assumingMemoryBound(to: Int32.self)[1] = 2; return 2 }, usage: { pid in pid == 1 ? .init(user: .max, system: 1, footprint: 1, startTime: 1) : .init(user: 1, system: 2, footprint: 3, startTime: 4) }, shortName: { _ in nil }, path: { _ in "/System/Library/WindowServer" }, clock: { 7 }))
-    #expect(reader.read()?.records == [.init(pid: 2, startTime: 4, groupID: "exe:/System/Library/WindowServer", name: "WindowServer", cumulativeCPUTimeNanoseconds: 3, physicalFootprintBytes: 3)])
+    #expect(reader.read()?.records == [.init(pid: 2, startTime: 4, groupID: "exe:/System/Library/WindowServer", name: "WindowServer", iconPath: "/System/Library/WindowServer", cumulativeCPUTimeNanoseconds: 3, physicalFootprintBytes: 3)])
 }
 
 @Test func readerRejectsExcessiveCountAndFillFailures() {
@@ -102,6 +102,9 @@ func liveReaderReturnsOnlySafeRecordsWhenEnabled() {
     #expect(reading.monotonicNanoseconds > 0)
     #expect(Set(reading.records.map(\.pid)).count == reading.records.count)
     #expect(reading.records.allSatisfy { $0.pid > 0 && !$0.name.isEmpty && !$0.processName.isEmpty })
+    #expect(reading.records.allSatisfy { record in
+        record.iconPath == nil || record.iconPath?.first == "/"
+    })
 }
 
 @Test func readerUsesOutermostAppBundleAndLexicallyNormalizesNestedHelpers() {
@@ -110,7 +113,44 @@ func liveReaderReturnsOnlySafeRecordsWhenEnabled() {
         usage: { _ in .init(user: 2, system: 3, footprint: 4, startTime: 5) }, shortName: { _ in "ignored" },
         path: { _ in "/Applications/./Google Chrome.app/Contents/Frameworks/Google Chrome Helper.app/Contents/MacOS/../MacOS/Google Chrome Helper" }, clock: { 99 }
     ))
-    #expect(reader.read()?.records == [.init(pid: 42, startTime: 5, groupID: "app:/Applications/Google Chrome.app", name: "Google Chrome", processName: "Google Chrome Helper", cumulativeCPUTimeNanoseconds: 5, physicalFootprintBytes: 4)])
+    #expect(reader.read()?.records == [
+        .init(
+            pid: 42,
+            startTime: 5,
+            groupID: "app:/Applications/Google Chrome.app",
+            name: "Google Chrome",
+            processName: "Google Chrome Helper",
+            iconPath: "/Applications/Google Chrome.app",
+            cumulativeCPUTimeNanoseconds: 5,
+            physicalFootprintBytes: 4
+        )
+    ])
+}
+
+@Test func readerUsesNormalizedExecutableAsItsIconPath() {
+    let reader = ResourceConsumerReader(dependencies: .init(
+        count: { 1 },
+        fill: { pointer, _ in pointer!.assumingMemoryBound(to: Int32.self)[0] = 7; return 1 },
+        usage: { _ in .init(user: 1, system: 2, footprint: 3, startTime: 4) },
+        shortName: { _ in "ignored" },
+        path: { _ in "/usr/local/../local/bin/worker" },
+        clock: { 8 }
+    ))
+
+    #expect(reader.read()?.records.first?.iconPath == "/usr/local/bin/worker")
+}
+
+@Test func readerFallbackIdentityHasNoIconPath() {
+    let reader = ResourceConsumerReader(dependencies: .init(
+        count: { 1 },
+        fill: { pointer, _ in pointer!.assumingMemoryBound(to: Int32.self)[0] = 9; return 1 },
+        usage: { _ in .init(user: 1, system: 2, footprint: 3, startTime: 4) },
+        shortName: { _ in "worker" },
+        path: { _ in nil },
+        clock: { 8 }
+    ))
+
+    #expect(reader.read()?.records.first?.iconPath == nil)
 }
 
 @Test func readerSeparatesMissingPathsByPIDAndStartTime() {

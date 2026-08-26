@@ -1,10 +1,10 @@
 import Foundation
 
 struct ConsumerUsageRecord: Equatable, Sendable {
-    let pid: Int32; let startTime: UInt64; let groupID: String; let name: String; let processName: String; let cumulativeCPUTimeNanoseconds: UInt64; let cumulativeGPUTimeNanoseconds: UInt64?; let physicalFootprintBytes: UInt64
+    let pid: Int32; let startTime: UInt64; let groupID: String; let name: String; let processName: String; let iconPath: String?; let cumulativeCPUTimeNanoseconds: UInt64; let cumulativeGPUTimeNanoseconds: UInt64?; let physicalFootprintBytes: UInt64
 
-    init(pid: Int32, startTime: UInt64, groupID: String, name: String, processName: String? = nil, cumulativeCPUTimeNanoseconds: UInt64, physicalFootprintBytes: UInt64, cumulativeGPUTimeNanoseconds: UInt64? = nil) {
-        self.pid = pid; self.startTime = startTime; self.groupID = groupID; self.name = name; self.processName = processName ?? name; self.cumulativeCPUTimeNanoseconds = cumulativeCPUTimeNanoseconds; self.physicalFootprintBytes = physicalFootprintBytes; self.cumulativeGPUTimeNanoseconds = cumulativeGPUTimeNanoseconds
+    init(pid: Int32, startTime: UInt64, groupID: String, name: String, processName: String? = nil, iconPath: String? = nil, cumulativeCPUTimeNanoseconds: UInt64, physicalFootprintBytes: UInt64, cumulativeGPUTimeNanoseconds: UInt64? = nil) {
+        self.pid = pid; self.startTime = startTime; self.groupID = groupID; self.name = name; self.processName = processName ?? name; self.iconPath = iconPath; self.cumulativeCPUTimeNanoseconds = cumulativeCPUTimeNanoseconds; self.physicalFootprintBytes = physicalFootprintBytes; self.cumulativeGPUTimeNanoseconds = cumulativeGPUTimeNanoseconds
     }
 }
 struct ConsumerUsageReading: Equatable, Sendable { let monotonicNanoseconds: UInt64; let records: [ConsumerUsageRecord] }

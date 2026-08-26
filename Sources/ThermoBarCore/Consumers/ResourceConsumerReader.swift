@@ -31,13 +31,13 @@ struct ResourceConsumerReader: Sendable {
     private let dependencies: Dependencies
 
     private enum Identity: Equatable, Sendable {
-        case path(groupID: String, name: String, processName: String)
+        case path(groupID: String, name: String, processName: String, iconPath: String)
         case fallback(name: String)
 
-        func resolved(pid: Int32, startTime: UInt64) -> (groupID: String, name: String, processName: String) {
+        func resolved(pid: Int32, startTime: UInt64) -> (groupID: String, name: String, processName: String, iconPath: String?) {
             switch self {
-            case let .path(groupID, name, processName): (groupID, name, processName)
-            case let .fallback(name): ("pid:\(pid):\(startTime)", name, name)
+            case let .path(groupID, name, processName, iconPath): (groupID, name, processName, iconPath)
+            case let .fallback(name): ("pid:\(pid):\(startTime)", name, name, nil)
             }
         }
     }
@@ -74,11 +74,11 @@ struct ResourceConsumerReader: Sendable {
             guard let before, let after = identity(for: pid) else { continue }
             let beforeResolved = before.resolved(pid: pid, startTime: usage.startTime)
             let afterResolved = after.resolved(pid: pid, startTime: usage.startTime)
-            guard beforeResolved.groupID == afterResolved.groupID, beforeResolved.name == afterResolved.name, beforeResolved.processName == afterResolved.processName else { continue }
+            guard beforeResolved.groupID == afterResolved.groupID, beforeResolved.name == afterResolved.name, beforeResolved.processName == afterResolved.processName, beforeResolved.iconPath == afterResolved.iconPath else { continue }
             let sum = usage.user.addingReportingOverflow(usage.system)
             guard !sum.overflow else { continue }
             let total = sum.partialValue
-            records.append(.init(pid: pid, startTime: usage.startTime, groupID: beforeResolved.groupID, name: beforeResolved.name, processName: beforeResolved.processName, cumulativeCPUTimeNanoseconds: total, physicalFootprintBytes: usage.footprint, cumulativeGPUTimeNanoseconds: gpuUsage[pid]))
+            records.append(.init(pid: pid, startTime: usage.startTime, groupID: beforeResolved.groupID, name: beforeResolved.name, processName: beforeResolved.processName, iconPath: beforeResolved.iconPath, cumulativeCPUTimeNanoseconds: total, physicalFootprintBytes: usage.footprint, cumulativeGPUTimeNanoseconds: gpuUsage[pid]))
         }
         return .init(monotonicNanoseconds: dependencies.clock(), records: records)
     }
@@ -125,9 +125,10 @@ struct ResourceConsumerReader: Sendable {
             let appName = components[appIndex]
             let displayName = String(appName.dropLast(4))
             guard !displayName.isEmpty else { return nil }
-            return .path(groupID: "app:/" + components.prefix(through: appIndex).joined(separator: "/"), name: displayName, processName: String(filename))
+            let appPath = "/" + components.prefix(through: appIndex).joined(separator: "/")
+            return .path(groupID: "app:\(appPath)", name: displayName, processName: String(filename), iconPath: appPath)
         }
-        return .path(groupID: "exe:\(normalized)", name: String(filename), processName: String(filename))
+        return .path(groupID: "exe:\(normalized)", name: String(filename), processName: String(filename), iconPath: normalized)
     }
     private static func string(capacity: Int, call: (UnsafeMutablePointer<CChar>) -> Int32) -> String? {
         var buffer = [CChar](repeating: 0, count: capacity)
