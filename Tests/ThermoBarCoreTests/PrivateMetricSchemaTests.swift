@@ -17,6 +17,12 @@ import Testing
     #expect(schema?.osBuild == "26A5416b")
 }
 
+@Test func latestTargetBuildSchemaIsSupported() {
+    let schema = PrivateMetricSchemaRegistry.schema(model: "Mac17,9", build: "26A5421a")
+
+    #expect(schema?.osBuild == "26A5421a")
+}
+
 @Test(arguments: [
     ("Mac17,8", "26A5388g"),
     ("Mac17,9", "26A5388f"),
