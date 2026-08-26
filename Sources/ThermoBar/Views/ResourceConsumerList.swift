@@ -20,11 +20,11 @@ struct ResourceConsumerSummary: Equatable {
 }
 
 enum ResourceConsumerRowLayout {
-    static let contentWidth: CGFloat = FloatingPanelLayout.width - 28
+    static let contentWidth: CGFloat = FloatingPanelLayout.consumerColumnWidth
     static let maximumIconSize: CGFloat = 26
     static let actionSize: CGFloat = 20
     static let maximumValueColumnWidth: CGFloat = 44
-    static let maximumMemoryColumnWidth: CGFloat = 60
+    static let maximumMemoryColumnWidth: CGFloat = 72
     static let spacing: CGFloat = 5
     static let maximumDynamicTypeSize: DynamicTypeSize = .xxxLarge
 
@@ -106,7 +106,7 @@ struct ResourceConsumerList: View {
     let openActivityMonitor: () -> Void
     @ScaledMetric(relativeTo: .body) private var scaledIconSize: CGFloat = 22
     @ScaledMetric(relativeTo: .body) private var scaledValueColumnWidth: CGFloat = 38
-    @ScaledMetric(relativeTo: .body) private var scaledMemoryColumnWidth: CGFloat = 54
+    @ScaledMetric(relativeTo: .body) private var scaledMemoryColumnWidth: CGFloat = 64
 
     init(
         metric: ResourceConsumerMetric,

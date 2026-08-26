@@ -10,8 +10,7 @@ struct MetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(.body.bold())
             Text(verbatim: value)
                 .font(.title3.monospacedDigit())
             if let fraction {

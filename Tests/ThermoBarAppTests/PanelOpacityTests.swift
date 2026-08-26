@@ -162,15 +162,20 @@ private final class PanelOpacityFakeIconProvider: ApplicationIconProviding {
     func icon(for path: String?) -> NSImage? { nil }
 }
 
-@Test @MainActor func consumerVisibilityControlsTheFooterWithoutSuppressingWarnings() {
+@Test @MainActor func consumerVisibilityControlsTheConsumerColumnWithoutSuppressingWarnings() {
     let neither = ResourceConsumerVisibility(showCompute: false, showMemory: false)
 
-    #expect(!FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: neither, hasDiagnostic: false, isFresh: true))
-    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: .init(showCompute: true, showMemory: false), hasDiagnostic: false, isFresh: true))
-    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: .init(showCompute: false, showMemory: true), hasDiagnostic: false, isFresh: true))
-    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: .all, hasDiagnostic: false, isFresh: true))
-    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: neither, hasDiagnostic: true, isFresh: true))
-    #expect(FloatingPanelContent.shouldShowFooter(resourceConsumerVisibility: neither, hasDiagnostic: false, isFresh: false))
+    // Ostrzeżenia czujników żyją w lewej kolumnie i nie zależą od rankingów.
+    #expect(!FloatingPanelContent.showsStatusRow(hasDiagnostic: false, isFresh: true))
+    #expect(FloatingPanelContent.showsStatusRow(hasDiagnostic: true, isFresh: true))
+    #expect(FloatingPanelContent.showsStatusRow(hasDiagnostic: false, isFresh: false))
+
+    // Prawa kolumna znika, gdy nic jej nie wypełnia.
+    #expect(!FloatingPanelContent.showsConsumerColumn(visibility: neither, metric: .init(cpu: .measuring, memory: .measuring)))
+    #expect(!FloatingPanelContent.showsConsumerColumn(visibility: .all, metric: .inactive))
+    #expect(FloatingPanelContent.showsConsumerColumn(visibility: .init(showCompute: true, showMemory: false), metric: .init(cpu: .measuring, memory: .inactive)))
+    #expect(!FloatingPanelContent.showsConsumerColumn(visibility: .init(showCompute: true, showMemory: false), metric: .init(cpu: .inactive, memory: .measuring)))
+    #expect(FloatingPanelContent.showsConsumerColumn(visibility: .init(showCompute: false, showMemory: true), metric: .init(cpu: .inactive, memory: .measuring)))
 }
 
 @MainActor private func panelOpacityDefaults() -> UserDefaults {

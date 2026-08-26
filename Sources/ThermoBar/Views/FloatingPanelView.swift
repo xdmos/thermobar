@@ -2,7 +2,21 @@ import SwiftUI
 import ThermoBarCore
 
 enum FloatingPanelLayout {
-    static let width: CGFloat = 260
+    /// Lewa kolumna: nagłówek hotspotu, kafelki metryk i ostrzeżenia czujników.
+    /// 232 pt to dzisiejsza szerokość treści wąskiego panelu (260 minus obustronny padding).
+    static let metricsColumnWidth: CGFloat = 232
+    /// Prawa kolumna: rankingi PROCESY i RAM.
+    static let consumerColumnWidth: CGFloat = 300
+    static let columnSpacing: CGFloat = 14
+    static let padding: CGFloat = 14
+    static let dividerWidth: CGFloat = 1
+
+    /// Panel bez rankingów zwija się do historycznych 260 pt.
+    static func totalWidth(showsConsumers: Bool) -> CGFloat {
+        let base = (2 * padding) + metricsColumnWidth
+        guard showsConsumers else { return base }
+        return base + columnSpacing + dividerWidth + columnSpacing + consumerColumnWidth
+    }
 }
 
 struct FloatingPanelView: View {
@@ -81,26 +95,36 @@ struct FloatingPanelContent: View {
     }
 
     var body: some View {
+        HStack(alignment: .top, spacing: FloatingPanelLayout.columnSpacing) {
+            metricsColumn
+                .frame(width: FloatingPanelLayout.metricsColumnWidth, alignment: .leading)
+            if showsConsumerColumn {
+                Divider()
+                consumerColumn
+                    .frame(width: FloatingPanelLayout.consumerColumnWidth, alignment: .leading)
+            }
+        }
+        .padding(FloatingPanelLayout.padding)
+        .frame(width: FloatingPanelLayout.totalWidth(showsConsumers: showsConsumerColumn), alignment: .leading)
+        // The floating scene must follow the panel's intrinsic height. Without
+        // this, a legacy window height can compress and clip the process rows.
+        .fixedSize(horizontal: false, vertical: true)
+        .background { background }
+        .transaction { transaction in if reduceMotion { transaction.animation = nil } }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(ThermoBarCopy.appName))
+    }
+
+    private var metricsColumn: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
             Divider()
             metricGrid
-            if shouldShowFooter {
+            if showsStatusRow {
                 Divider()
-                footer
+                statusRow
             }
         }
-        .padding(14)
-        .frame(width: FloatingPanelLayout.width, alignment: .leading)
-        // The floating scene must follow the panel's intrinsic height. Without
-        // this, a legacy 330-point window can compress and clip the process rows.
-        .fixedSize(horizontal: false, vertical: true)
-        .background {
-            background
-        }
-        .transaction { transaction in if reduceMotion { transaction.animation = nil } }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(ThermoBarCopy.appName))
     }
 
     private var header: some View {
@@ -134,7 +158,7 @@ struct FloatingPanelContent: View {
     }
 
     private var metricGrid: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 20) {
             HStack(alignment: .top, spacing: 14) {
                 MetricTile(
                     title: ThermoBarCopy.cpu,
@@ -170,51 +194,65 @@ struct FloatingPanelContent: View {
         }
     }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    @ViewBuilder
+    private var statusRow: some View {
         if let diagnostic = ThermoBarPresentation.footerDiagnostic(for: sensorStatus) {
-             HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
-                Text(verbatim: ThermoBarPresentation.diagnostic(diagnostic)).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text(verbatim: ThermoBarPresentation.diagnostic(diagnostic))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
         } else if !presentation.isFresh {
-             HStack(spacing: 6) {
-            Image(systemName: presentation.isFresh ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .accessibilityHidden(true)
-            Text(presentation.freshness)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-        }
-        if resourceConsumerVisibility.showsAny {
-            ResourceConsumerList(
-                metric: presentation.resourceConsumers,
-                summary: presentation.resourceConsumerSummary,
-                visibility: resourceConsumerVisibility,
-                iconProvider: iconProvider,
-                openActivityMonitor: openActivityMonitor
-            )
-        }
+            HStack(spacing: 6) {
+                Image(systemName: presentation.isFresh ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text(presentation.freshness)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
         }
     }
 
-    private var shouldShowFooter: Bool {
-        Self.shouldShowFooter(
-            resourceConsumerVisibility: resourceConsumerVisibility,
+    private var consumerColumn: some View {
+        ResourceConsumerList(
+            metric: presentation.resourceConsumers,
+            summary: presentation.resourceConsumerSummary,
+            visibility: resourceConsumerVisibility,
+            iconProvider: iconProvider,
+            openActivityMonitor: openActivityMonitor
+        )
+    }
+
+    private var showsStatusRow: Bool {
+        Self.showsStatusRow(
             hasDiagnostic: ThermoBarPresentation.footerDiagnostic(for: sensorStatus) != nil,
             isFresh: presentation.isFresh
         )
     }
 
-    static func shouldShowFooter(
-        resourceConsumerVisibility: ResourceConsumerVisibility,
-        hasDiagnostic: Bool,
-        isFresh: Bool
+    private var showsConsumerColumn: Bool {
+        Self.showsConsumerColumn(
+            visibility: resourceConsumerVisibility,
+            metric: presentation.resourceConsumers
+        )
+    }
+
+    static func showsStatusRow(hasDiagnostic: Bool, isFresh: Bool) -> Bool {
+        hasDiagnostic || !isFresh
+    }
+
+    static func showsConsumerColumn(
+        visibility: ResourceConsumerVisibility,
+        metric: ResourceConsumerMetric
     ) -> Bool {
-        resourceConsumerVisibility.showsAny || hasDiagnostic || !isFresh
+        (visibility.showCompute && metric.cpu != .inactive)
+            || (visibility.showMemory && metric.memory != .inactive)
     }
 
 }
@@ -562,32 +600,32 @@ enum ThermoBarCopy {
     static let consumerMemoryAccessibility = resource("consumer.memory-accessibility")
 }
 
-#Preview("Początkowy pomiar", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 360)) {
+#Preview("Początkowy pomiar", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(snapshot: nil, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
-#Preview("Pomiar CPU i RAM", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 430)) {
+#Preview("Pomiar CPU i RAM", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(snapshot: PreviewFixtures.measuring, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
-#Preview("Rankingi procesów", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
+#Preview("Rankingi procesów", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(snapshot: PreviewFixtures.nominal, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
         .preferredColorScheme(.dark)
 }
 
-#Preview("Brak danych procesów", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 430)) {
+#Preview("Brak danych procesów", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(snapshot: PreviewFixtures.unavailable, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
-#Preview("Stan poważny", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
+#Preview("Stan poważny", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(snapshot: PreviewFixtures.serious, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
-#Preview("Nieaktualne dane", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
+#Preview("Nieaktualne dane", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(snapshot: PreviewFixtures.stale, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds)
 }
 
-#Preview("Nieobsługiwany schemat", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
+#Preview("Nieobsługiwany schemat", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(
         snapshot: PreviewFixtures.unsupportedSchema,
         mode: .visible,
@@ -598,7 +636,7 @@ enum ThermoBarCopy {
     )
 }
 
-#Preview("Częściowy błąd czujnika", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 500)) {
+#Preview("Częściowy błąd czujnika", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(
         snapshot: PreviewFixtures.partialSensorFailure,
         mode: .visible,
@@ -609,13 +647,13 @@ enum ThermoBarCopy {
     )
 }
 
-#Preview("Jasny tryb i większy kontrast", traits: .fixedLayout(width: FloatingPanelLayout.width, height: 310)) {
+#Preview("Jasny tryb i większy kontrast", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {
     FloatingPanelView(snapshot: PreviewFixtures.nominal, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds,
         accessibilityOverride: .init(contrast: .increased, reduceMotion: false))
         .preferredColorScheme(.light)
 }
 
-#Preview("Duży tekst i ograniczony ruch", traits: .fixedLayout(width: 320, height: 440)) {
+#Preview("Duży tekst i ograniczony ruch", traits: .fixedLayout(width: 700, height: 520)) {
     FloatingPanelView(snapshot: PreviewFixtures.serious, mode: .visible, iconProvider: PreviewFixtures.iconStore, openActivityMonitor: PreviewFixtures.openActivityMonitor, nowNanoseconds: PreviewFixtures.nowNanoseconds,
         accessibilityOverride: .init(contrast: .standard, reduceMotion: true))
         .dynamicTypeSize(.accessibility3)

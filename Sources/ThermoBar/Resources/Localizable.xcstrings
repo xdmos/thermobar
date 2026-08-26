@@ -30,7 +30,7 @@
     "metric.cpu-average" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Śr. CPU" } } } },
     "metric.gpu" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "GPU" } } } },
     "metric.gpu-average" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Śr. GPU" } } } },
-    "metric.fans" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wentylatory" } } } },
+    "metric.fans" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Fan" } } } },
     "metric.fastest" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Najszybszy" } } } },
     "metric.memory" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "RAM" } } } },
     "metric.thermal-state" : { "localizations" : { "pl" : { "stringUnit" : { "state" : "translated", "value" : "Stan macOS" } } } },

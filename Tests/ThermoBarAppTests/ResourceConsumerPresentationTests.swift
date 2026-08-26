@@ -60,11 +60,16 @@ import Testing
     #expect(ResourceConsumerPresentation.openActivityMonitor(name: "Finder", locale: Locale(identifier: "en_US")) == "Open Activity Monitor — Finder")
 }
 
-@Test func maximumConsumerColumnsLeaveAReadableNameAtTwoHundredThirtyTwoPoints() {
-    #expect(ResourceConsumerRowLayout.contentWidth == 232)
+@Test func maximumConsumerColumnsLeaveAReadableNameAtThreeHundredPoints() {
+    #expect(ResourceConsumerRowLayout.contentWidth == 300)
     #expect(ResourceConsumerRowLayout.maximumComputeNameWidth >= 70)
     #expect(ResourceConsumerRowLayout.maximumMemoryNameWidth >= 90)
     #expect(ResourceConsumerRowLayout.maximumDynamicTypeSize == .xxxLarge)
+}
+
+@Test func floatingPanelCollapsesToTheNarrowWidthWithoutTheConsumerColumn() {
+    #expect(FloatingPanelLayout.totalWidth(showsConsumers: false) == 260)
+    #expect(FloatingPanelLayout.totalWidth(showsConsumers: true) == 589)
 }
 
 @Test func thermobarPresentationPublishesConsumerHeaderSummariesFromTheSnapshot() {
