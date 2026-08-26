@@ -14,6 +14,7 @@ struct ResourceConsumerCalculator: Sendable {
     private struct Aggregate: Sendable {
         let groupID: String
         let name: String
+        let iconPath: String?
         var representativePID: Int32
         var value: UInt64
     }
@@ -58,7 +59,7 @@ struct ResourceConsumerCalculator: Sendable {
         let cpuRows = cpuDeltas.compactMap { record, value -> ResourceConsumerCPUEntry? in
             let percent = Double(value) / Double(elapsed) * 100
             guard percent.isFinite, percent >= 0 else { return nil }
-            return .init(pid: record.pid, name: record.processName, percent: percent, gpuPercent: gpuPercentByPID[record.pid])
+            return .init(pid: record.pid, name: record.processName, percent: percent, gpuPercent: gpuPercentByPID[record.pid], iconPath: record.iconPath)
         }
         let ranked = cpuRows.sorted(by: Self.computeOrder).prefix(5)
         return .init(cpu: ranked.isEmpty ? .measuring : .available(Array(ranked)), memory: memory)
@@ -83,19 +84,19 @@ struct ResourceConsumerCalculator: Sendable {
         for (record, value) in zip(records, values) {
             guard !record.groupID.isEmpty, !record.name.isEmpty else { return nil }
             if var existing = aggregates[record.groupID] {
-                guard existing.name == record.name else { return nil }
+                guard existing.name == record.name, existing.iconPath == record.iconPath else { return nil }
                 let sum = existing.value.addingReportingOverflow(value)
                 guard !sum.overflow else { return nil }
                 existing.value = sum.partialValue
                 existing.representativePID = min(existing.representativePID, record.pid)
                 aggregates[record.groupID] = existing
             } else {
-                aggregates[record.groupID] = .init(groupID: record.groupID, name: record.name, representativePID: record.pid, value: value)
+                aggregates[record.groupID] = .init(groupID: record.groupID, name: record.name, iconPath: record.iconPath, representativePID: record.pid, value: value)
             }
         }
         return Array(aggregates.values)
     }
-    private static func memoryEntry(_ group: Aggregate) -> ResourceConsumerMemoryEntry { .init(pid: group.representativePID, name: group.name, physicalFootprintBytes: group.value) }
+    private static func memoryEntry(_ group: Aggregate) -> ResourceConsumerMemoryEntry { .init(pid: group.representativePID, name: group.name, physicalFootprintBytes: group.value, iconPath: group.iconPath) }
     private static func nameOrder(_ lhs: String, _ rhs: String) -> Bool { lhs.unicodeScalars.lexicographicallyPrecedes(rhs.unicodeScalars) }
     private static func aggregateOrder(_ lhs: Aggregate, _ rhs: Aggregate) -> Bool { lhs.value != rhs.value ? lhs.value > rhs.value : lhs.name != rhs.name ? nameOrder(lhs.name, rhs.name) : lhs.groupID < rhs.groupID }
     private static func computeOrder(_ lhs: ResourceConsumerCPUEntry, _ rhs: ResourceConsumerCPUEntry) -> Bool {
