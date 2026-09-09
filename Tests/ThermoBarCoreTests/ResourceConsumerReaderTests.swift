@@ -1,5 +1,6 @@
 import Testing
 import Darwin
+import Foundation
 @testable import ThermoBarCore
 
 @Test func readerUsesOneBoundedRetryAndSkipsBadEntries() {
@@ -179,4 +180,43 @@ private final class ReaderCallRecorder: @unchecked Sendable {
 private final class ReaderPathRecorder: @unchecked Sendable {
     private var paths = ["/Applications/One.app/Contents/MacOS/One", "/Applications/Two.app/Contents/MacOS/Two"]
     func next() -> String? { paths.removeFirst() }
+}
+
+/// The unit of `ri_user_time` / `ri_system_time` is a fact about libproc, and every
+/// other test in this file injects `usage:` — so the real closure, which is where the
+/// unit lives, is exercised by nothing. This test drives the DEFAULT reader against a
+/// child of known load: `yes > /dev/null` saturates exactly one core, so the derived
+/// share of one core must land near 100%. Reading the counters as nanoseconds when they
+/// are mach ticks understates them by the timebase ratio (125/3 on Apple Silicon), which
+/// puts the same child at ~2.4% — a value indistinguishable from an idle process.
+@Test func defaultReaderReportsCPUTimeInNanosecondsAgainstAKnownFullCoreLoad() throws {
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: "/bin/sh")
+    child.arguments = ["-c", "exec yes > /dev/null"]
+    try child.run()
+    defer { child.terminate() }
+
+    let reader = ResourceConsumerReader()
+    let pid = child.processIdentifier
+
+    func cumulativeCPU() throws -> (nanoseconds: UInt64, clock: UInt64) {
+        let reading = try #require(reader.read())
+        let record = try #require(reading.records.first { $0.pid == pid })
+        return (record.cumulativeCPUTimeNanoseconds, reading.monotonicNanoseconds)
+    }
+
+    usleep(200_000)
+    let first = try cumulativeCPU()
+    usleep(600_000)
+    let second = try cumulativeCPU()
+
+    let elapsed = second.clock - first.clock
+    #expect(elapsed > 0)
+    let consumed = second.nanoseconds - first.nanoseconds
+    let percent = Double(consumed) / Double(elapsed) * 100
+
+    // A full core is 100%. The band is wide enough for scheduler noise and a busy host,
+    // and far above the ~2.4% an unconverted mach-tick reading produces.
+    #expect(percent > 50, "one saturated core reported as \(percent)% of a core")
+    #expect(percent < 200, "implausible for a single-threaded child: \(percent)%")
 }

@@ -1,4 +1,5 @@
 import Testing
+import Darwin
 @testable import ThermoBarCore
 
 @Test func cpuDeltaOracleIsFiftySixPercent() {
@@ -110,4 +111,29 @@ import Testing
 
 @Test func monotonicConversionRejectsZeroDenominator() {
     #expect(MonotonicClock.nanoseconds(ticks: 1, numerator: 1, denominator: 0) == nil)
+}
+
+/// Pins that the mach-tick overload actually applies the process timebase. An
+/// implementation that returned its argument unchanged would be correct only where the
+/// timebase is 1/1 — true on Intel, false on Apple Silicon (125/3), which is exactly how
+/// a missing conversion stays invisible until it reaches the hardware that scales.
+@Test func machTickConversionAppliesTheProcessTimebase() {
+    var timebase = mach_timebase_info_data_t()
+    #expect(mach_timebase_info(&timebase) == KERN_SUCCESS)
+    #expect(timebase.denom != 0)
+
+    let ticks: UInt64 = 1_000_000
+    #expect(
+        MonotonicClock.nanoseconds(machTicks: ticks)
+            == MonotonicClock.nanoseconds(
+                ticks: ticks,
+                numerator: UInt64(timebase.numer),
+                denominator: UInt64(timebase.denom)
+            )
+    )
+
+    // Where the timebase scales, the identity implementation is observably wrong.
+    if timebase.numer != timebase.denom {
+        #expect(MonotonicClock.nanoseconds(machTicks: ticks) != ticks)
+    }
 }

@@ -50,7 +50,16 @@ struct ResourceConsumerReader: Sendable {
                 var info = rusage_info_v4()
                 let result = withUnsafeMutablePointer(to: &info) { pointer in pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) } }
                 guard result == 0 else { return nil }
-                return .init(user: info.ri_user_time, system: info.ri_system_time, footprint: info.ri_phys_footprint, startTime: info.ri_proc_start_abstime)
+                // ri_user_time and ri_system_time are mach absolute-time units, not
+                // nanoseconds; the calculator divides them by a real-nanosecond elapsed
+                // time, so they must be converted at this boundary. ri_proc_start_abstime
+                // stays raw on purpose — it is only ever compared for equality, to detect
+                // a recycled PID, and converting it would cost precision for nothing.
+                guard
+                    let user = MonotonicClock.nanoseconds(machTicks: info.ri_user_time),
+                    let system = MonotonicClock.nanoseconds(machTicks: info.ri_system_time)
+                else { return nil }
+                return .init(user: user, system: system, footprint: info.ri_phys_footprint, startTime: info.ri_proc_start_abstime)
             },
             // `proc_name` documents a buffer matching proc_bsdinfo.pbi_name:
             // 2 * MAXCOMLEN bytes. It returns strlen, leaving the terminating NUL
