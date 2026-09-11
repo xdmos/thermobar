@@ -72,44 +72,6 @@ confirmation in **System Settings → General → Login Items & Extensions**.
   are cleared when the panel is hidden or the Mac goes to sleep;
 - preferences are stored locally in `UserDefaults`.
 
-## Project layout
-
-- `ThermoBar/` — the app: SwiftUI views, menu bar and panel windows, preferences,
-  notifications, and the string catalog;
-- `ThermoBarTests/` — app tests, run inside the app by Xcode;
-- `Packages/ThermoBarCore/` — sensor, CPU, memory, GPU, and process readers and
-  the sampling logic, as a local Swift package with its own tests.
-
-## Tests
-
-In Xcode, **Product → Test** (⌘U) runs the app tests. The same from the command
-line:
-
-```bash
-xcodebuild test -project ThermoBar.xcodeproj -scheme ThermoBar
-```
-
-The ThermoBarCore tests run with Swift Package Manager, or in Xcode after opening
-`Packages/ThermoBarCore/Package.swift`:
-
-```bash
-cd Packages/ThermoBarCore
-swift test
-```
-
-Additional quality gates, run from `Packages/ThermoBarCore`:
-
-```bash
-swift test --sanitize=thread
-THERMOBAR_RUN_LIVE_SENSORS=1 swift test --filter Live
-THERMOBAR_LIVE_CONSUMER_READER=1 THERMOBAR_LIVE_GPU_CLIENT_READER=1 swift test --filter 'liveReaderReturnsOnlySafeRecordsWhenEnabled|liveGPUClientReaderReturnsOnlyValidCountersWhenEnabled'
-THERMOBAR_RUN_PERFORMANCE=1 swift test -c release --filter SensorReadPerformanceTests
-```
-
-The `Live` tests and performance benchmark are intended for the supported Mac
-model. The two live process-reader tests read the processes running on the
-current Mac.
-
 ## Third-party information
 
 The project has no executable third-party dependencies. Attribution for the
