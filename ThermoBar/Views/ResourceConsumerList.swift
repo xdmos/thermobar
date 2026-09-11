@@ -63,6 +63,16 @@ enum ResourceConsumerPresentation {
 
     static func gpu(_ value: Double?) -> String { value.map(Self.cpu) ?? "—" }
 
+    /// RAM rows sum every process of one application, so a group is labelled with
+    /// its size. A single process needs no label: "(1)" would be noise on most rows.
+    static func processCount(_ count: Int) -> String? {
+        count > 1 ? "(\(count))" : nil
+    }
+
+    static func memoryName(_ name: String, processCount count: Int) -> String {
+        processCount(count).map { "\(name) \($0)" } ?? name
+    }
+
     static func accessibility(rank: Int, name: String, resource: String, value: String, locale: Locale = .current) -> String {
         // Select the matching .lproj bundle first so previews and presentation
         // tests can render a caller-supplied locale without language-specific
@@ -280,16 +290,28 @@ struct ResourceConsumerList: View {
 
     private func memoryRow(rank: Int, row: ResourceConsumerMemoryEntry) -> some View {
         let value = ResourceConsumerPresentation.memory(row.physicalFootprintBytes)
+        let displayName = ResourceConsumerPresentation.memoryName(row.name, processCount: row.processCount)
         return HStack(spacing: ResourceConsumerRowLayout.spacing) {
             HStack(spacing: ResourceConsumerRowLayout.spacing) {
                 consumerIcon(path: row.iconPath)
                     .frame(width: iconSize, height: iconSize)
                     .clipShape(.rect(cornerRadius: 6))
                     .accessibilityHidden(true)
-                Text(verbatim: row.name)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(Text(verbatim: row.name))
+                // The count is its own text so that truncating a long name never
+                // cuts it off: the name gives way, the group size stays readable.
+                HStack(spacing: 3) {
+                    Text(verbatim: row.name)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let count = ResourceConsumerPresentation.processCount(row.processCount) {
+                        Text(verbatim: count)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .help(Text(verbatim: displayName))
                 Spacer(minLength: 4)
                 Text(verbatim: value)
                     .font(.body.monospacedDigit())
@@ -301,7 +323,7 @@ struct ResourceConsumerList: View {
             .accessibilityLabel(
                 ResourceConsumerPresentation.accessibility(
                     rank: rank,
-                    name: row.name,
+                    name: displayName,
                     resource: "RAM",
                     value: value
                 )

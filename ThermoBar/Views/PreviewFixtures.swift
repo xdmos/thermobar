@@ -11,7 +11,7 @@ enum PreviewFixtures {
             .init(pid: 3, name: "WindowServer", percent: 22, gpuPercent: 12, iconPath: "/System/Applications/Utilities/Terminal.app")
         ]),
         memory: .available([
-            .init(pid: 1, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 1_800 * 1_024 * 1_024, iconPath: "/System/Applications/Safari.app"),
+            .init(pid: 1, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 1_800 * 1_024 * 1_024, processCount: 36, iconPath: "/System/Applications/Safari.app"),
             .init(pid: 2, name: "Preview Browser with a deliberately long process name", physicalFootprintBytes: 620 * 1_024 * 1_024, iconPath: "/System/Applications/Safari.app"),
             .init(pid: 3, name: "WindowServer", physicalFootprintBytes: 410 * 1_024 * 1_024, iconPath: "/System/Applications/Utilities/Terminal.app")
         ])

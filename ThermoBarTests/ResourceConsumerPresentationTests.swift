@@ -84,3 +84,17 @@ import Testing
         memory: "50%"
     ))
 }
+
+@Test func memoryRowsLabelApplicationGroupsWithTheirProcessCount() {
+    #expect(ResourceConsumerPresentation.processCount(1) == nil)
+    #expect(ResourceConsumerPresentation.processCount(36) == "(36)")
+    #expect(ResourceConsumerPresentation.memoryName("Finder", processCount: 1) == "Finder")
+    #expect(ResourceConsumerPresentation.memoryName("Claude", processCount: 36) == "Claude (36)")
+    #expect(ResourceConsumerPresentation.accessibility(
+        rank: 1,
+        name: ResourceConsumerPresentation.memoryName("Claude", processCount: 36),
+        resource: "RAM",
+        value: "1.9 GB",
+        locale: Locale(identifier: "en_US")
+    ) == "Rank 1, Claude (36), RAM, 1.9 GB")
+}

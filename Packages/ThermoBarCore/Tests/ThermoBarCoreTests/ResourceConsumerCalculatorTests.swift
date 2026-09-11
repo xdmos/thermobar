@@ -84,7 +84,7 @@ import Testing
         record(3, "Google Chrome", 220, 70, gpu: 250, group: "app:/Applications/Google Chrome.app", processName: "Google Chrome Helper (Renderer)", iconPath: "/Applications/Google Chrome.app"),
         record(8, "ChatGPT", 110, 60, group: "app:/Applications/ChatGPT.app", iconPath: "/Applications/ChatGPT.app")
     ]))
-    #expect(result.memory == .available([.init(pid: 3, name: "Google Chrome", physicalFootprintBytes: 120, iconPath: "/Applications/Google Chrome.app"), .init(pid: 8, name: "ChatGPT", physicalFootprintBytes: 60, iconPath: "/Applications/ChatGPT.app")]))
+    #expect(result.memory == .available([.init(pid: 3, name: "Google Chrome", physicalFootprintBytes: 120, processCount: 2, iconPath: "/Applications/Google Chrome.app"), .init(pid: 8, name: "ChatGPT", physicalFootprintBytes: 60, iconPath: "/Applications/ChatGPT.app")]))
     #expect(result.cpu == .available([
         .init(pid: 3, name: "Google Chrome Helper (Renderer)", percent: 200, gpuPercent: 50, iconPath: "/Applications/Google Chrome.app"),
         .init(pid: 8, name: "ChatGPT", percent: 100, iconPath: "/Applications/ChatGPT.app"),
@@ -118,7 +118,7 @@ import Testing
         record(2, "Same", 320, 40, group: group, processName: "Two", iconPath: "/Applications/Same.app")
     ]))
     #expect(third.memory == .available([
-        .init(pid: 1, name: "Same", physicalFootprintBytes: 70, iconPath: "/Applications/Same.app")
+        .init(pid: 1, name: "Same", physicalFootprintBytes: 70, processCount: 2, iconPath: "/Applications/Same.app")
     ]))
     #expect(third.cpu != .measuring)
 }
@@ -130,7 +130,7 @@ import Testing
         record(3, "worker", 0, 5, group: "exe:/usr/local/bin/worker"),
         record(1, "worker", 0, 4, group: "exe:/opt/tools/worker")
     ])
-    #expect(calculator.consume(reading).memory == .available([.init(pid: 2, name: "worker", physicalFootprintBytes: 8), .init(pid: 1, name: "worker", physicalFootprintBytes: 4)]))
+    #expect(calculator.consume(reading).memory == .available([.init(pid: 2, name: "worker", physicalFootprintBytes: 8, processCount: 2), .init(pid: 1, name: "worker", physicalFootprintBytes: 4)]))
 }
 
 @Test func calculatorShowsTheFiveLargestMemoryApplicationGroups() {

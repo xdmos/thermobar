@@ -17,6 +17,7 @@ struct ResourceConsumerCalculator: Sendable {
         let iconPath: String?
         var representativePID: Int32
         var value: UInt64
+        var processCount: Int
     }
     private var timestamp: UInt64?
     private var baselines: [Int32: Baseline] = [:]
@@ -89,14 +90,15 @@ struct ResourceConsumerCalculator: Sendable {
                 guard !sum.overflow else { return nil }
                 existing.value = sum.partialValue
                 existing.representativePID = min(existing.representativePID, record.pid)
+                existing.processCount += 1
                 aggregates[record.groupID] = existing
             } else {
-                aggregates[record.groupID] = .init(groupID: record.groupID, name: record.name, iconPath: record.iconPath, representativePID: record.pid, value: value)
+                aggregates[record.groupID] = .init(groupID: record.groupID, name: record.name, iconPath: record.iconPath, representativePID: record.pid, value: value, processCount: 1)
             }
         }
         return Array(aggregates.values)
     }
-    private static func memoryEntry(_ group: Aggregate) -> ResourceConsumerMemoryEntry { .init(pid: group.representativePID, name: group.name, physicalFootprintBytes: group.value, iconPath: group.iconPath) }
+    private static func memoryEntry(_ group: Aggregate) -> ResourceConsumerMemoryEntry { .init(pid: group.representativePID, name: group.name, physicalFootprintBytes: group.value, processCount: group.processCount, iconPath: group.iconPath) }
     private static func nameOrder(_ lhs: String, _ rhs: String) -> Bool { lhs.unicodeScalars.lexicographicallyPrecedes(rhs.unicodeScalars) }
     private static func aggregateOrder(_ lhs: Aggregate, _ rhs: Aggregate) -> Bool { lhs.value != rhs.value ? lhs.value > rhs.value : lhs.name != rhs.name ? nameOrder(lhs.name, rhs.name) : lhs.groupID < rhs.groupID }
     private static func computeOrder(_ lhs: ResourceConsumerCPUEntry, _ rhs: ResourceConsumerCPUEntry) -> Bool {
