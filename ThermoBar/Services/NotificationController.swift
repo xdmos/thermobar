@@ -266,12 +266,12 @@ actor NotificationController {
         switch alert.severity {
         case .serious:
             severity = "serious"
-            title = "Poważny stan termiczny"
-            body = "ThermoBar wykrył poważne obciążenie termiczne Maca."
+            title = String(localized: ThermoBarCopy.notificationSeriousTitle)
+            body = String(localized: ThermoBarCopy.notificationSeriousBody)
         case .critical:
             severity = "critical"
-            title = "Krytyczny stan termiczny"
-            body = "ThermoBar wykrył krytyczne obciążenie termiczne Maca."
+            title = String(localized: ThermoBarCopy.notificationCriticalTitle)
+            body = String(localized: ThermoBarCopy.notificationCriticalBody)
         }
         return LocalNotificationRequest(
             identifier: "thermobar.\(severity).\(timestamp)",

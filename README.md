@@ -18,6 +18,7 @@ telemetry, and requires neither an account nor an Internet connection.
 - options to hide the process and memory lists;
 - adjustable floating panel opacity;
 - sensor diagnostics with a retry action;
+- English and Polish interface, following the macOS language order;
 - optional local notifications for serious and critical thermal conditions;
 - optional launch at login;
 - adaptive sampling based on panel visibility and Mac sleep state.

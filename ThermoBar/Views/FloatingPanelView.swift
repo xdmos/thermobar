@@ -598,6 +598,10 @@ enum ThermoBarCopy {
     static let consumerUnavailable = resource("consumer.unavailable")
     static let consumerCPUAccessibility = resource("consumer.cpu-accessibility")
     static let consumerMemoryAccessibility = resource("consumer.memory-accessibility")
+    static let notificationSeriousTitle = resource("notification.serious-title")
+    static let notificationSeriousBody = resource("notification.serious-body")
+    static let notificationCriticalTitle = resource("notification.critical-title")
+    static let notificationCriticalBody = resource("notification.critical-body")
 }
 
 #Preview("Początkowy pomiar", traits: .fixedLayout(width: FloatingPanelLayout.totalWidth(showsConsumers: true), height: 360)) {

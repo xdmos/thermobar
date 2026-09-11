@@ -110,11 +110,13 @@ private let settingsRoute = "Ustawienia systemowe → Powiadomienia → ThermoBa
     #expect(await controller.consume(thermalLevel: .critical, transitionTimestamp: 127) == .delivered("thermobar.critical.127"))
     #expect(await client.requests.map(\.identifier) == ["thermobar.serious.123", "thermobar.critical.125", "thermobar.critical.127"])
     #expect((await client.requests).allSatisfy { $0.sound == .default && $0.delivery == .immediate })
-    #expect((await client.requests).map { "\($0.title)|\($0.body)" } == [
-        "Poważny stan termiczny|ThermoBar wykrył poważne obciążenie termiczne Maca.",
-        "Krytyczny stan termiczny|ThermoBar wykrył krytyczne obciążenie termiczne Maca.",
-        "Krytyczny stan termiczny|ThermoBar wykrył krytyczne obciążenie termiczne Maca."
-    ])
+    // The copy follows the app's language, so compare against the catalog entries.
+    let serious = "\(String(localized: ThermoBarCopy.notificationSeriousTitle))|\(String(localized: ThermoBarCopy.notificationSeriousBody))"
+    let critical = "\(String(localized: ThermoBarCopy.notificationCriticalTitle))|\(String(localized: ThermoBarCopy.notificationCriticalBody))"
+    #expect(serious != critical)
+    #expect(!serious.contains("notification."))
+    #expect(!critical.contains("notification."))
+    #expect((await client.requests).map { "\($0.title)|\($0.body)" } == [serious, critical, critical])
 }
 
 @Test func revokedPermissionBeforeDeliveryCancelsAddAndDisablesController() async {
