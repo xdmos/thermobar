@@ -1,3 +1,5 @@
+import Foundation
+
 public struct FanKeyPair: Equatable, Sendable {
     public let actualKey: String
     public let maximumKey: String
@@ -40,12 +42,16 @@ public struct PrivateMetricSchema: Equatable, Sendable {
 }
 
 public enum PrivateMetricSchemaRegistry {
+    /// Mac models whose private sensor keys have been verified against real hardware.
+    private static let verifiedModels: Set<String> = ["Mac17,9"]
+
+    /// The key allowlist is defined by the Mac model and its SMC firmware, not by the
+    /// macOS build, so the gate deliberately ignores `build` beyond a sanity check.
+    /// Every individual read is still validated at runtime: the key must exist, carry the
+    /// expected SMC data type and size, and pass the reader's range checks.
     public static func schema(model: String, build: String) -> PrivateMetricSchema? {
-        switch (model, build) {
-        case ("Mac17,9", "26A5388g"), ("Mac17,9", "26A5406e"), ("Mac17,9", "26A5416b"),
-             ("Mac17,9", "26A5421a"):
-            break
-        default:
+        guard verifiedModels.contains(model),
+              !build.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
 
