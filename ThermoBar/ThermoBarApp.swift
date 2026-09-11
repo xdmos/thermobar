@@ -2,7 +2,6 @@ import Darwin
 import SwiftUI
 import ThermoBarCore
 
-@main
 struct ThermoBarApp: App {
     @State private var model: AppModel
     @State private var iconStore: ApplicationIconStore

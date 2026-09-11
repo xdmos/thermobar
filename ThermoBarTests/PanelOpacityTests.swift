@@ -130,8 +130,7 @@ import Testing
     let catalogURL = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .appendingPathComponent("Sources/ThermoBar/Resources/Localizable.xcstrings")
+        .appendingPathComponent("ThermoBar/Resources/Localizable.xcstrings")
     let catalog = try String(contentsOf: catalogURL, encoding: .utf8)
 
     #expect(catalog.contains("\"setting.visible-in-panel\""))

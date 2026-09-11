@@ -28,7 +28,7 @@ AppleSMC.
 ## Requirements
 
 - macOS 27.0 or later;
-- Xcode with the Swift 6.2 toolchain;
+- Xcode 27;
 - Apple Silicon.
 
 Full access to private sensors is currently verified only on `Mac17,9`. The
@@ -41,19 +41,19 @@ system update changes a sensor key, is shown as unavailable rather than guessed.
 On an unverified model ThermoBar disables temperature, GPU, and RPM readings.
 Public CPU, memory, and macOS thermal-state metrics remain available.
 
-## Install from source
+## Build
 
-```bash
-git clone https://github.com/xdmos/thermobar.git
-cd thermobar
-./Scripts/build-app.sh
-ditto build/ThermoBar.app /Applications/ThermoBar.app
-open /Applications/ThermoBar.app
-```
+1. Open `ThermoBar.xcodeproj` in Xcode.
+2. Build and run the `ThermoBar` scheme.
 
-The build script creates a locally signed app bundle at
-`build/ThermoBar.app`. After launch, the ThermoBar icon appears in the menu bar.
-Click it to show or hide the floating panel and to change settings.
+The project signs the app to run locally, so no Apple developer account is
+needed. To sign with your own team, select it under *Signing & Capabilities*.
+
+To install, build the Release configuration and copy `ThermoBar.app` to
+`/Applications`. Launch at login is meant to be used from there.
+
+After launch, the ThermoBar icon appears in the menu bar. Click it to show or
+hide the floating panel and to change settings.
 
 Notifications require macOS permission. Enabling launch at login may require
 confirmation in **System Settings → General → Login Items & Extensions**.
@@ -63,7 +63,7 @@ confirmation in **System Settings → General → Login Items & Extensions**.
 - no external SwiftPM dependencies;
 - no networking, telemetry, or analytics;
 - no subprocesses, XPC, or privileged helper;
-- empty entitlements;
+- Release builds use the hardened runtime and have no entitlements;
 - read-only AppleSMC access using an exact sensor-key allowlist for the
   supported model;
 - process names, paths, and resource usage are read only while the floating
@@ -71,29 +71,43 @@ confirmation in **System Settings → General → Login Items & Extensions**.
   are cleared when the panel is hidden or the Mac goes to sleep;
 - preferences are stored locally in `UserDefaults`.
 
+## Project layout
+
+- `ThermoBar/` — the app: SwiftUI views, menu bar and panel windows, preferences,
+  notifications, and the string catalog;
+- `ThermoBarTests/` — app tests, run inside the app by Xcode;
+- `Packages/ThermoBarCore/` — sensor, CPU, memory, GPU, and process readers and
+  the sampling logic, as a local Swift package with its own tests.
+
 ## Tests
 
-Run the main test suite:
+In Xcode, **Product → Test** (⌘U) runs the app tests. The same from the command
+line:
 
 ```bash
-swift test -Xswiftc -strict-concurrency=complete
+xcodebuild test -project ThermoBar.xcodeproj -scheme ThermoBar
 ```
 
-Additional quality gates:
+The ThermoBarCore tests run with Swift Package Manager, or in Xcode after opening
+`Packages/ThermoBarCore/Package.swift`:
 
 ```bash
-swift test --sanitize=thread -Xswiftc -strict-concurrency=complete
+cd Packages/ThermoBarCore
+swift test
+```
+
+Additional quality gates, run from `Packages/ThermoBarCore`:
+
+```bash
+swift test --sanitize=thread
 THERMOBAR_RUN_LIVE_SENSORS=1 swift test --filter Live
 THERMOBAR_LIVE_CONSUMER_READER=1 THERMOBAR_LIVE_GPU_CLIENT_READER=1 swift test --filter 'liveReaderReturnsOnlySafeRecordsWhenEnabled|liveGPUClientReaderReturnsOnlyValidCountersWhenEnabled'
 THERMOBAR_RUN_PERFORMANCE=1 swift test -c release --filter SensorReadPerformanceTests
-./Scripts/build-app.sh
-./Scripts/verify-security.sh build/ThermoBar.app
 ```
 
 The `Live` tests and performance benchmark are intended for the supported Mac
 model. The two live process-reader tests read the processes running on the
-current Mac. `verify-security.sh` requires [ripgrep](https://github.com/BurntSushi/ripgrep)
-(`brew install ripgrep`).
+current Mac.
 
 ## Third-party information
 

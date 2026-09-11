@@ -37,9 +37,9 @@ enum ResourceConsumerRowLayout {
 enum ResourceConsumerPresentation {
     // Keep these catalog keys visible to the string-catalog compiler. The actual
     // lookup below chooses the caller's lproj bundle before formatting.
-    private static let cpuAccessibilityCatalogKey = String(localized: "consumer.cpu-accessibility", defaultValue: "Rank %lld, %@, CPU, %@", bundle: .module)
-    private static let memoryAccessibilityCatalogKey = String(localized: "consumer.memory-accessibility", defaultValue: "Rank %lld, %@, RAM, %@", bundle: .module)
-    private static let computeAccessibilityCatalogKey = String(localized: "consumer.compute-accessibility", defaultValue: "Rank %lld, %@, GPU %@, CPU %@", bundle: .module)
+    private static let cpuAccessibilityCatalogKey = String(localized: "consumer.cpu-accessibility", defaultValue: "Rank %lld, %@, CPU, %@", bundle: .main)
+    private static let memoryAccessibilityCatalogKey = String(localized: "consumer.memory-accessibility", defaultValue: "Rank %lld, %@, RAM, %@", bundle: .main)
+    private static let computeAccessibilityCatalogKey = String(localized: "consumer.compute-accessibility", defaultValue: "Rank %lld, %@, GPU %@, CPU %@", bundle: .main)
 
     static func cpu(_ value: Double) -> String {
         guard value.isFinite, value >= 0, value <= Double(Int.max) else { return "—" }
@@ -68,7 +68,7 @@ enum ResourceConsumerPresentation {
         // tests can render a caller-supplied locale without language-specific
         // wording being taken from the host process.
         let language = locale.language.languageCode?.identifier ?? "en"
-        let bundle = Bundle.module.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .module
+        let bundle = Bundle.main.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .main
         let format: String
         if resource == "CPU" {
             format = bundle.localizedString(forKey: "consumer.cpu-accessibility", value: Self.cpuAccessibilityCatalogKey, table: nil)
@@ -80,15 +80,15 @@ enum ResourceConsumerPresentation {
 
     static func computeAccessibility(rank: Int, name: String, cpu: Double, gpu: Double?, locale: Locale = .current) -> String {
         let language = locale.language.languageCode?.identifier ?? "en"
-        let bundle = Bundle.module.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .module
+        let bundle = Bundle.main.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .main
         let format = bundle.localizedString(forKey: "consumer.compute-accessibility", value: Self.computeAccessibilityCatalogKey, table: nil)
         return String(format: format, locale: locale, rank, name, Self.cpu(cpu), gpu.map(Self.cpu) ?? "—")
     }
 
     static func openActivityMonitor(name: String, locale: Locale = .current) -> String {
         let language = locale.language.languageCode?.identifier ?? "en"
-        let bundle = Bundle.module.path(forResource: language, ofType: "lproj")
-            .flatMap(Bundle.init(path:)) ?? .module
+        let bundle = Bundle.main.path(forResource: language, ofType: "lproj")
+            .flatMap(Bundle.init(path:)) ?? .main
         let format = bundle.localizedString(
             forKey: "action.open-activity-monitor",
             value: "Open Activity Monitor — %@",
