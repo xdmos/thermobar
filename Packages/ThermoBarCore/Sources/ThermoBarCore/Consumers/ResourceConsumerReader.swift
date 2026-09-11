@@ -6,7 +6,7 @@ struct ResourceConsumerReader: Sendable {
     static let maximumPIDCapacity = 32_768
     private static let pathCapacity = 4_096
 
-    struct NativeUsage: Sendable { let user: UInt64; let system: UInt64; let footprint: UInt64; let startTime: UInt64 }
+    struct NativeUsage: Sendable { let user: UInt64; let system: UInt64; let footprint: UInt64?; let startTime: UInt64 }
     struct Dependencies: Sendable {
         let count: @Sendable () -> Int32
         let fill: @Sendable (UnsafeMutableRawPointer?, Int32) -> Int32
@@ -14,6 +14,10 @@ struct ResourceConsumerReader: Sendable {
         let shortName: @Sendable (Int32) -> String?
         let path: @Sendable (Int32) -> String?
         let gpuUsage: @Sendable () -> [Int32: UInt64]
+        /// Cumulative CPU nanoseconds for processes that refuse `usage`.
+        let deniedCPUTimes: @Sendable () -> [Int32: UInt64]
+        /// Start time for processes that refuse `usage`; compared only for equality.
+        let startTime: @Sendable (Int32) -> UInt64?
         let clock: @Sendable () -> UInt64
 
         init(
@@ -23,9 +27,11 @@ struct ResourceConsumerReader: Sendable {
             shortName: @escaping @Sendable (Int32) -> String?,
             path: @escaping @Sendable (Int32) -> String?,
             gpuUsage: @escaping @Sendable () -> [Int32: UInt64] = { [:] },
+            deniedCPUTimes: @escaping @Sendable () -> [Int32: UInt64] = { [:] },
+            startTime: @escaping @Sendable (Int32) -> UInt64? = { _ in nil },
             clock: @escaping @Sendable () -> UInt64
         ) {
-            self.count = count; self.fill = fill; self.usage = usage; self.shortName = shortName; self.path = path; self.gpuUsage = gpuUsage; self.clock = clock
+            self.count = count; self.fill = fill; self.usage = usage; self.shortName = shortName; self.path = path; self.gpuUsage = gpuUsage; self.deniedCPUTimes = deniedCPUTimes; self.startTime = startTime; self.clock = clock
         }
     }
     private let dependencies: Dependencies
@@ -67,6 +73,8 @@ struct ResourceConsumerReader: Sendable {
             shortName: { pid in Self.string(capacity: Int(2 * MAXCOMLEN)) { proc_name(pid, $0, UInt32(2 * MAXCOMLEN)) } },
             path: { pid in Self.string(capacity: Self.pathCapacity) { proc_pidpath(pid, $0, UInt32(Self.pathCapacity)) } },
             gpuUsage: { GPUClientUsageReader().read() },
+            deniedCPUTimes: { ProcessCPUTimeReader().read() },
+            startTime: { pid in Self.startTime(pid: pid) },
             clock: { MonotonicClock.nowNanoseconds() }
         )
     }
@@ -75,11 +83,23 @@ struct ResourceConsumerReader: Sendable {
     func read() -> ConsumerUsageReading? {
         guard let pids = enumerate() else { return nil }
         let gpuUsage = dependencies.gpuUsage()
+        // Processes owned by another user refuse proc_pid_rusage. Their CPU time comes
+        // from the fallback, loaded at most once per reading and only when needed,
+        // because it costs a process launch. They carry no footprint: nothing
+        // unprivileged reports one, and an invented value would distort the RAM list.
+        var deniedCPUTimes: [Int32: UInt64]?
         var records: [ConsumerUsageRecord] = []
         var seen = Set<Int32>()
         for pid in pids where pid > 0 && seen.insert(pid).inserted {
             let before = identity(for: pid)
-            guard let usage = dependencies.usage(pid) else { continue }
+            let usage: NativeUsage
+            if let native = dependencies.usage(pid) {
+                usage = native
+            } else {
+                if deniedCPUTimes == nil { deniedCPUTimes = dependencies.deniedCPUTimes() }
+                guard let cpu = deniedCPUTimes?[pid], let start = dependencies.startTime(pid) else { continue }
+                usage = .init(user: cpu, system: 0, footprint: nil, startTime: start)
+            }
             guard let before, let after = identity(for: pid) else { continue }
             let beforeResolved = before.resolved(pid: pid, startTime: usage.startTime)
             let afterResolved = after.resolved(pid: pid, startTime: usage.startTime)
@@ -107,6 +127,23 @@ struct ResourceConsumerReader: Sendable {
         }
         return nil
     }
+    /// Start time from sysctl, which answers for processes of every user. Like
+    /// ri_proc_start_abstime it only detects a recycled PID by equality, so the two
+    /// clocks are never compared with each other; a process that moves between the
+    /// two sources simply restarts its CPU baseline.
+    private static func startTime(pid: Int32) -> UInt64? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size == MemoryLayout<kinfo_proc>.stride else { return nil }
+        let start = info.kp_proc.p_starttime
+        guard start.tv_sec > 0, start.tv_usec >= 0 else { return nil }
+        let microseconds = UInt64(start.tv_sec).multipliedReportingOverflow(by: 1_000_000)
+        guard !microseconds.overflow else { return nil }
+        let total = microseconds.partialValue.addingReportingOverflow(UInt64(start.tv_usec))
+        return total.overflow ? nil : total.partialValue
+    }
+
     private func identity(for pid: Int32) -> Identity? {
         if let path = dependencies.path(pid), let normalized = Self.normalize(path: path) {
             return normalized

@@ -240,3 +240,25 @@ private func record(
         cumulativeGPUTimeNanoseconds: gpu
     )
 }
+
+@Test func processesWithoutAReadableFootprintJoinTheCPUListButNotTheRAMGroups() {
+    var calculator = ResourceConsumerCalculator()
+    let shared = "exe:/usr/libexec/shared"
+    func reading(_ timestamp: UInt64, _ cpu: UInt64) -> ConsumerUsageReading {
+        .init(monotonicNanoseconds: timestamp, records: [
+            .init(pid: 1, startTime: 1, groupID: shared, name: "shared", cumulativeCPUTimeNanoseconds: cpu, physicalFootprintBytes: nil),
+            .init(pid: 2, startTime: 1, groupID: shared, name: "shared", cumulativeCPUTimeNanoseconds: 0, physicalFootprintBytes: 40),
+            .init(pid: 3, startTime: 1, groupID: "exe:/System/WindowServer", name: "WindowServer", cumulativeCPUTimeNanoseconds: 2 * cpu, physicalFootprintBytes: nil)
+        ])
+    }
+    _ = calculator.consume(reading(100, 0))
+    let result = calculator.consume(reading(200, 50))
+    // The group keeps only the process it can measure: 40 bytes from one process, not
+    // two, and WindowServer has no RAM row at all.
+    #expect(result.memory == .available([.init(pid: 2, name: "shared", physicalFootprintBytes: 40)]))
+    #expect(result.cpu == .available([
+        .init(pid: 3, name: "WindowServer", percent: 100),
+        .init(pid: 1, name: "shared", percent: 50),
+        .init(pid: 2, name: "shared", percent: 0)
+    ]))
+}

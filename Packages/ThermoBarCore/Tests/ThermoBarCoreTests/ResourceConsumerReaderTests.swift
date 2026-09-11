@@ -220,3 +220,64 @@ private final class ReaderPathRecorder: @unchecked Sendable {
     #expect(percent > 50, "one saturated core reported as \(percent)% of a core")
     #expect(percent < 200, "implausible for a single-threaded child: \(percent)%")
 }
+
+/// proc_pid_rusage refuses processes owned by another user, and those include the
+/// heaviest consumers on a Mac (WindowServer, coreaudiod). launchd is the stable
+/// member of that set: PID 1, owned by root, present on every boot. The default
+/// reader must still report its CPU time; before system processes were read through
+/// `ps` it was silently skipped, like every other process the app does not own.
+@Test func defaultReaderIncludesProcessesOwnedByAnotherUser() throws {
+    let reading = try #require(ResourceConsumerReader().read())
+    let launchd = try #require(reading.records.first { $0.pid == 1 }, "PID 1 (launchd, root) is missing from the reading")
+    #expect(launchd.name == "launchd")
+    #expect(launchd.cumulativeCPUTimeNanoseconds > 0)
+    #expect(launchd.physicalFootprintBytes == nil, "a footprint the app cannot read must not be invented")
+}
+
+private final class FallbackCallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    func increment() { lock.withLock { calls += 1 } }
+    var value: Int { lock.withLock { calls } }
+}
+
+@Test func readerTakesCPUTimeFromTheFallbackOnlyForRefusedProcessesAndLoadsItOnce() {
+    let fallbackCalls = FallbackCallCounter()
+    let paths = ["/sbin/launchd", "/Applications/Own.app/Contents/MacOS/Own", "/usr/sbin/unlisted"]
+    let reader = ResourceConsumerReader(dependencies: .init(
+        count: { 3 },
+        fill: { pointer, _ in
+            let pids = pointer?.assumingMemoryBound(to: Int32.self)
+            pids?[0] = 1; pids?[1] = 2; pids?[2] = 3
+            return 3
+        },
+        usage: { pid in pid == 2 ? .init(user: 5, system: 6, footprint: 70, startTime: 4) : nil },
+        shortName: { _ in nil },
+        path: { pid in paths[Int(pid) - 1] },
+        deniedCPUTimes: { fallbackCalls.increment(); return [1: 900] },
+        startTime: { pid in pid == 1 ? 11 : 12 },
+        clock: { 50 }
+    ))
+    // PID 1 is refused and listed by the fallback; PID 3 is refused and absent, so it is
+    // skipped rather than reported with an invented CPU time.
+    #expect(reader.read() == .init(monotonicNanoseconds: 50, records: [
+        .init(pid: 1, startTime: 11, groupID: "exe:/sbin/launchd", name: "launchd", iconPath: "/sbin/launchd", cumulativeCPUTimeNanoseconds: 900, physicalFootprintBytes: nil),
+        .init(pid: 2, startTime: 4, groupID: "app:/Applications/Own.app", name: "Own", iconPath: "/Applications/Own.app", cumulativeCPUTimeNanoseconds: 11, physicalFootprintBytes: 70)
+    ]))
+    #expect(fallbackCalls.value == 1)
+}
+
+@Test func readerNeverRunsTheFallbackWhenEveryProcessIsReadable() {
+    let fallbackCalls = FallbackCallCounter()
+    let reader = ResourceConsumerReader(dependencies: .init(
+        count: { 1 },
+        fill: { pointer, _ in pointer?.assumingMemoryBound(to: Int32.self)[0] = 42; return 1 },
+        usage: { _ in .init(user: 1, system: 1, footprint: 1, startTime: 1) },
+        shortName: { _ in "own" },
+        path: { _ in nil },
+        deniedCPUTimes: { fallbackCalls.increment(); return [:] },
+        clock: { 1 }
+    ))
+    #expect(reader.read()?.records.count == 1)
+    #expect(fallbackCalls.value == 0)
+}

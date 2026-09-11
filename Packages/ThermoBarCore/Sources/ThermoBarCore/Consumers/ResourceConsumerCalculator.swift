@@ -1,9 +1,9 @@
 import Foundation
 
 struct ConsumerUsageRecord: Equatable, Sendable {
-    let pid: Int32; let startTime: UInt64; let groupID: String; let name: String; let processName: String; let iconPath: String?; let cumulativeCPUTimeNanoseconds: UInt64; let cumulativeGPUTimeNanoseconds: UInt64?; let physicalFootprintBytes: UInt64
+    let pid: Int32; let startTime: UInt64; let groupID: String; let name: String; let processName: String; let iconPath: String?; let cumulativeCPUTimeNanoseconds: UInt64; let cumulativeGPUTimeNanoseconds: UInt64?; let physicalFootprintBytes: UInt64?
 
-    init(pid: Int32, startTime: UInt64, groupID: String, name: String, processName: String? = nil, iconPath: String? = nil, cumulativeCPUTimeNanoseconds: UInt64, physicalFootprintBytes: UInt64, cumulativeGPUTimeNanoseconds: UInt64? = nil) {
+    init(pid: Int32, startTime: UInt64, groupID: String, name: String, processName: String? = nil, iconPath: String? = nil, cumulativeCPUTimeNanoseconds: UInt64, physicalFootprintBytes: UInt64?, cumulativeGPUTimeNanoseconds: UInt64? = nil) {
         self.pid = pid; self.startTime = startTime; self.groupID = groupID; self.name = name; self.processName = processName ?? name; self.iconPath = iconPath; self.cumulativeCPUTimeNanoseconds = cumulativeCPUTimeNanoseconds; self.physicalFootprintBytes = physicalFootprintBytes; self.cumulativeGPUTimeNanoseconds = cumulativeGPUTimeNanoseconds
     }
 }
@@ -69,7 +69,12 @@ struct ResourceConsumerCalculator: Sendable {
         timestamp = reading.monotonicNanoseconds
         baselines = Dictionary(uniqueKeysWithValues: reading.records.map { ($0.pid, Baseline(startTime: $0.startTime, groupID: $0.groupID, cpu: $0.cumulativeCPUTimeNanoseconds, gpu: $0.cumulativeGPUTimeNanoseconds)) })
     }
-    private static func aggregate(_ records: [ConsumerUsageRecord], value: KeyPath<ConsumerUsageRecord, UInt64>) -> [Aggregate]? { aggregate(records, values: records.map { $0[keyPath: value] }) }
+    private static func aggregate(_ records: [ConsumerUsageRecord], value: KeyPath<ConsumerUsageRecord, UInt64?>) -> [Aggregate]? {
+        // A record without the value (a process whose footprint the app may not read)
+        // takes no part in the groups: it must add neither bytes nor a process.
+        let measured = records.filter { $0[keyPath: value] != nil }
+        return aggregate(measured, values: measured.compactMap { $0[keyPath: value] })
+    }
     private static func validateGroups(_ records: [ConsumerUsageRecord]) -> Bool {
         var names: [String: String] = [:]
         for record in records {

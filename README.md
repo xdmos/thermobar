@@ -13,8 +13,9 @@ telemetry, and requires neither an account nor an Internet connection.
 - average CPU and GPU temperatures, plus the hottest sensor reading;
 - current speed of the fastest fan in RPM;
 - macOS system thermal state;
-- top five processes by CPU usage, with their GPU share, and top five apps by
-  memory footprint, each with a shortcut to Activity Monitor;
+- top five processes by CPU usage, including system processes such as
+  WindowServer, with their GPU share, and top five of your own apps by memory
+  footprint, each with a shortcut to Activity Monitor;
 - options to hide the process and memory lists;
 - adjustable floating panel opacity;
 - sensor diagnostics with a retry action;
@@ -63,7 +64,11 @@ confirmation in **System Settings → General → Login Items & Extensions**.
 
 - no external SwiftPM dependencies;
 - no networking, telemetry, or analytics;
-- no subprocesses, XPC, or privileged helper;
+- no XPC or privileged helper;
+- one subprocess, `/bin/ps`, run only while the floating panel is visible:
+  macOS gives an unprivileged app no CPU time for processes owned by other
+  users, such as WindowServer, and `ps` ships with macOS to read it. `ps` does
+  not report memory footprint, so the memory list covers only your own apps;
 - Release builds use the hardened runtime and have no entitlements;
 - read-only AppleSMC access using an exact sensor-key allowlist for the
   supported model;
